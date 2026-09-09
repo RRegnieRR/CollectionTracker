@@ -45,12 +45,13 @@ function normalise(values) {
 
 let data = normalise({ ...defaults, ...readData() });
 let stagedToday = null;
-function displayCurrency() { return data.currency === 'CUSTOM' ? data.customCurrency : data.currency; }
-function displayRate() { return displayCurrency() === 'USD' ? 1 : data.currencyRate; }
-function money(value) {
-  const code = displayCurrency();
+const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
+function payoutCurrency() { return data.currency === 'CUSTOM' ? data.customCurrency : data.currency; }
+function payoutRate() { return payoutCurrency() === 'USD' ? 1 : data.currencyRate; }
+function payoutMoney(value) {
+  const code = payoutCurrency();
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(amount(value) * displayRate());
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(amount(value) * payoutRate());
   } catch {
     return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(amount(value));
   }
@@ -168,7 +169,7 @@ function render() {
   $('goalAmount').textContent = money(data.goal);
   $('nextTierAmount').textContent = money(view.next);
   $('daysLeft').textContent = view.remainingDays;
-  $('payoutAmount').textContent = money(view.collected * view.tier[2]);
+  $('payoutAmount').textContent = payoutMoney(view.collected * view.tier[2]);
   $('todayLabel').textContent = view.workday ? 'Today' : `${view.now.toLocaleDateString('en-US', { weekday: 'long' })} bonus`;
   $('progressText').textContent = view.workday ? `${money(view.today)} of ${money(view.daily)}` : `${money(view.today)} extra`;
   setProgress('progressFill', view.todayProgress);
@@ -190,36 +191,24 @@ function parseExpression(value) {
 }
 
 function closeSettings() { $('settingsModal').hidden = true; }
-function amountForInput(value, rate) {
-  return (amount(value) * rate).toFixed(2).replace(/\.00$/, '');
-}
 function selectedRate(form) {
   if (form.currency.value === 'USD') return 1;
   if (form.currency.value === 'MXN') return data.rate;
   return amount(form.currencyRate.value, 1);
 }
-function refreshCurrencyFields(form, convertAmounts = false) {
-  const oldRate = amount(form.dataset.displayRate, 1);
-  const rate = selectedRate(form);
-  if (convertAmounts) {
-    ['goal', 'before', 'today'].forEach((field) => {
-      form[field].value = amountForInput(amount(form[field].value) / oldRate, rate);
-    });
-  }
+function refreshCurrencyFields(form) {
   if (form.currency.value === 'USD') form.currencyRate.value = '1';
   if (form.currency.value === 'MXN') form.currencyRate.value = amount(data.rate).toFixed(4);
   $('customCurrencyFields').hidden = form.currency.value !== 'CUSTOM';
-  form.dataset.displayRate = String(selectedRate(form));
 }
 function openSettings() {
   const form = $('settingsForm');
   form.currency.value = data.currency;
   form.customCurrency.value = data.customCurrency;
-  form.currencyRate.value = displayRate();
-  form.dataset.displayRate = String(displayRate());
-  form.goal.value = amountForInput(data.goal, displayRate());
-  form.before.value = amountForInput(data.before, displayRate());
-  form.today.value = amountForInput(data.today, displayRate());
+  form.currencyRate.value = payoutRate();
+  form.goal.value = data.goal;
+  form.before.value = data.before;
+  form.today.value = data.today;
   form.hours.value = data.hours;
   refreshCurrencyFields(form);
   $('settingsModal').hidden = false;
@@ -243,8 +232,7 @@ $('settingsButton').addEventListener('click', openSettings);
 $('closeModal').addEventListener('click', closeSettings);
 $('cancelModal').addEventListener('click', closeSettings);
 $('settingsModal').addEventListener('click', (event) => { if (event.target === $('settingsModal')) closeSettings(); });
-$('settingsForm').currency.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form, true));
-$('settingsForm').currencyRate.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form, true));
+$('settingsForm').currency.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form));
 $('settingsForm').addEventListener('submit', (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -252,9 +240,9 @@ $('settingsForm').addEventListener('submit', (event) => {
   data.currency = form.currency.value;
   data.customCurrency = /^[A-Za-z]{3}$/.test(form.customCurrency.value) ? form.customCurrency.value.toUpperCase() : defaults.customCurrency;
   data.currencyRate = currencyRate;
-  data.goal = amount(form.goal.value) / currencyRate;
-  data.before = amount(form.before.value) / currencyRate;
-  data.today = amount(form.today.value) / currencyRate;
+  data.goal = amount(form.goal.value);
+  data.before = amount(form.before.value);
+  data.today = amount(form.today.value);
   data.hours = Math.max(.1, amount(form.hours.value, defaults.hours));
   data.month = monthKey(new Date());
   data.day = dateKey(new Date());
