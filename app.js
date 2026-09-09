@@ -143,13 +143,25 @@ function snapshot() {
     else { next = minimum - collected; break; }
   }
   const workday = isWorkday(now);
+  const elapsedWorkdays = Math.max(0, workdaysInMonth - remainingDays + (workday ? 1 : 0));
   const daily = remainingDays ? Math.max(0, (data.goal - data.before) / remainingDays) : Math.max(0, data.goal - collected);
   const todayLeft = workday ? Math.max(0, daily - today) : 0;
   return {
-    now, collected, tier, next, workday, daily, todayLeft, remainingDays,
+    now, collected, tier, next, workday, daily, todayLeft, remainingDays, workdaysInMonth, elapsedWorkdays,
     monthLeft: Math.max(0, data.goal - collected),
     today, todayProgress: workday ? (daily ? clamp(today / daily * 100, 0, 100) : (data.goal ? 100 : 0)) : (today ? 100 : 0)
   };
+}
+
+function trackStatus(view) {
+  const originalDailyTarget = view.workdaysInMonth ? data.goal / view.workdaysInMonth : 0;
+  if (!originalDailyTarget) return { label: 'On track', className: 'on-track' };
+  const expectedCollected = originalDailyTarget * view.elapsedWorkdays;
+  const daysFromTrack = (view.collected - expectedCollected) / originalDailyTarget;
+  if (daysFromTrack >= 2) return { label: 'Ahead Track', className: 'ahead-track' };
+  if (daysFromTrack >= 0) return { label: 'On track', className: 'on-track' };
+  if (daysFromTrack > -4) return { label: 'Close To Track', className: 'close-track' };
+  return { label: 'Behind Track', className: 'behind-track' };
 }
 
 function setProgress(id, percentage) {
@@ -178,7 +190,9 @@ function render() {
   $('monthProgressPercent').textContent = `${data.goal ? Math.round(clamp(view.collected / data.goal * 100, 0, 100)) : 0}% of goal`;
   $('monthRemaining').textContent = `${money(view.monthLeft)} remaining`;
   setProgress('monthProgressFill', data.goal ? view.collected / data.goal * 100 : 0);
-  $('ratePill').textContent = `${(view.tier[2] * 100).toFixed(2)}%`;
+  const status = trackStatus(view);
+  $('ratePill').textContent = status.label;
+  $('ratePill').className = `pill ${status.className}`;
   $('currentTier').textContent = `${view.tier[0]} rate`;
   $('tierRate').textContent = `${(view.tier[2] * 100).toFixed(2)}%`;
   setProgress('tierProgressFill', view.next ? view.collected / (view.collected + view.next) * 100 : 100);
