@@ -1,5 +1,5 @@
 const KEY = 'collection-tracker-web-v1';
-const defaults = { goal: 0, before: 0, today: 0, hours: 6, rate: 18, month: '', day: '', webInitialised: false };
+const defaults = { goal: 0, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, month: '', day: '', webInitialised: false };
 const originalWindowsValues = {
   goal: 29358,
   before: 8531,
@@ -28,6 +28,7 @@ function readData() {
 }
 
 function normalise(values) {
+  const currency = ['USD', 'MXN', 'CUSTOM'].includes(String(values.currency || 'USD').toUpperCase()) ? String(values.currency || 'USD').toUpperCase() : 'USD';
   return {
     ...defaults,
     ...values,
@@ -35,14 +36,25 @@ function normalise(values) {
     before: amount(values.before),
     today: amount(values.today),
     hours: Math.max(0.1, amount(values.hours, defaults.hours)),
-    rate: Math.max(0.01, amount(values.rate, defaults.rate))
+    rate: Math.max(0.01, amount(values.rate, defaults.rate)),
+    currency,
+    customCurrency: /^[A-Za-z]{3}$/.test(String(values.customCurrency || '')) ? String(values.customCurrency).toUpperCase() : defaults.customCurrency,
+    currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1))
   };
 }
 
 let data = normalise({ ...defaults, ...readData() });
 let stagedToday = null;
-const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
-const mxn = (value) => 'MX$' + new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount(value));
+function displayCurrency() { return data.currency === 'CUSTOM' ? data.customCurrency : data.currency; }
+function displayRate() { return displayCurrency() === 'USD' ? 1 : data.currencyRate; }
+function money(value) {
+  const code = displayCurrency();
+  try {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: code }).format(amount(value) * displayRate());
+  } catch {
+    return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }).format(amount(value));
+  }
+}
 const clamp = (value, minimum, maximum) => Math.max(minimum, Math.min(maximum, value));
 const dateKey = (date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
 const monthKey = (date) => `${date.getFullYear()}-${date.getMonth()}`;
@@ -156,7 +168,7 @@ function render() {
   $('goalAmount').textContent = money(data.goal);
   $('nextTierAmount').textContent = money(view.next);
   $('daysLeft').textContent = view.remainingDays;
-  $('payoutAmount').textContent = mxn(view.collected * view.tier[2] * data.rate);
+  $('payoutAmount').textContent = money(view.collected * view.tier[2]);
   $('todayLabel').textContent = view.workday ? 'Today' : `${view.now.toLocaleDateString('en-US', { weekday: 'long' })} bonus`;
   $('progressText').textContent = view.workday ? `${money(view.today)} of ${money(view.daily)}` : `${money(view.today)} extra`;
   setProgress('progressFill', view.todayProgress);
@@ -178,12 +190,38 @@ function parseExpression(value) {
 }
 
 function closeSettings() { $('settingsModal').hidden = true; }
+function amountForInput(value, rate) {
+  return (amount(value) * rate).toFixed(2).replace(/\.00$/, '');
+}
+function selectedRate(form) {
+  if (form.currency.value === 'USD') return 1;
+  if (form.currency.value === 'MXN') return data.rate;
+  return amount(form.currencyRate.value, 1);
+}
+function refreshCurrencyFields(form, convertAmounts = false) {
+  const oldRate = amount(form.dataset.displayRate, 1);
+  const rate = selectedRate(form);
+  if (convertAmounts) {
+    ['goal', 'before', 'today'].forEach((field) => {
+      form[field].value = amountForInput(amount(form[field].value) / oldRate, rate);
+    });
+  }
+  if (form.currency.value === 'USD') form.currencyRate.value = '1';
+  if (form.currency.value === 'MXN') form.currencyRate.value = amount(data.rate).toFixed(4);
+  $('customCurrencyFields').hidden = form.currency.value !== 'CUSTOM';
+  form.dataset.displayRate = String(selectedRate(form));
+}
 function openSettings() {
   const form = $('settingsForm');
-  form.goal.value = data.goal;
-  form.before.value = data.before;
-  form.today.value = data.today;
+  form.currency.value = data.currency;
+  form.customCurrency.value = data.customCurrency;
+  form.currencyRate.value = displayRate();
+  form.dataset.displayRate = String(displayRate());
+  form.goal.value = amountForInput(data.goal, displayRate());
+  form.before.value = amountForInput(data.before, displayRate());
+  form.today.value = amountForInput(data.today, displayRate());
   form.hours.value = data.hours;
+  refreshCurrencyFields(form);
   $('settingsModal').hidden = false;
   form.goal.focus();
 }
@@ -205,12 +243,18 @@ $('settingsButton').addEventListener('click', openSettings);
 $('closeModal').addEventListener('click', closeSettings);
 $('cancelModal').addEventListener('click', closeSettings);
 $('settingsModal').addEventListener('click', (event) => { if (event.target === $('settingsModal')) closeSettings(); });
+$('settingsForm').currency.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form, true));
+$('settingsForm').currencyRate.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form, true));
 $('settingsForm').addEventListener('submit', (event) => {
   event.preventDefault();
   const form = event.currentTarget;
-  data.goal = amount(form.goal.value);
-  data.before = amount(form.before.value);
-  data.today = amount(form.today.value);
+  const currencyRate = selectedRate(form);
+  data.currency = form.currency.value;
+  data.customCurrency = /^[A-Za-z]{3}$/.test(form.customCurrency.value) ? form.customCurrency.value.toUpperCase() : defaults.customCurrency;
+  data.currencyRate = currencyRate;
+  data.goal = amount(form.goal.value) / currencyRate;
+  data.before = amount(form.before.value) / currencyRate;
+  data.today = amount(form.today.value) / currencyRate;
   data.hours = Math.max(.1, amount(form.hours.value, defaults.hours));
   data.month = monthKey(new Date());
   data.day = dateKey(new Date());
