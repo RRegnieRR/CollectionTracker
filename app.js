@@ -118,6 +118,7 @@ const tiers = [
   ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 180, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
   ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
 ];
+const maxTierForSixOrFewerHours = 3;
 
 function snapshot() {
   ensureCurrentDate();
@@ -137,7 +138,8 @@ function snapshot() {
   const collected = data.before + today;
   let tier = ['Base', 0, .0535];
   let next = 0;
-  for (const candidate of tiers) {
+  const availableTiers = data.hours <= 6 ? tiers.slice(0, maxTierForSixOrFewerHours) : tiers;
+  for (const candidate of availableTiers) {
     const minimum = candidate[1] * data.hours * workdaysInMonth;
     if (collected >= minimum) tier = candidate;
     else { next = minimum - collected; break; }
