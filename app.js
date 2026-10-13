@@ -1,5 +1,5 @@
 const KEY = 'collection-tracker-web-v1';
-const defaults = { goal: 0, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, month: '', day: '', webInitialised: false };
+const defaults = { goal: 0, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
 const originalWindowsValues = {
   goal: 29358,
   before: 8531,
@@ -39,12 +39,15 @@ function normalise(values) {
     rate: Math.max(0.01, amount(values.rate, defaults.rate)),
     currency,
     customCurrency: /^[A-Za-z]{3}$/.test(String(values.customCurrency || '')) ? String(values.customCurrency).toUpperCase() : defaults.customCurrency,
-    currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1))
+    currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1)),
+    workdaysOverride: values.workdaysOverride == null ? null : Math.max(1, Math.min(31, Math.round(amount(values.workdaysOverride)))),
+    workdaysOverrideMonth: /^\d{4}-\d{1,2}$/.test(String(values.workdaysOverrideMonth || '')) ? String(values.workdaysOverrideMonth) : ''
   };
 }
 
 let data = normalise({ ...defaults, ...readData() });
 let stagedToday = null;
+let stagedWorkdaysOverride = null;
 let visibleTierCount = 5;
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
 function payoutCurrency() { return data.currency === 'CUSTOM' ? data.customCurrency : data.currency; }
@@ -80,6 +83,8 @@ function ensureCurrentDate() {
   if (data.month !== currentMonth) {
     data.before = 0;
     data.today = 0;
+    data.workdaysOverride = null;
+    data.workdaysOverrideMonth = '';
     data.month = currentMonth;
     data.day = currentDay;
     save();
@@ -87,6 +92,11 @@ function ensureCurrentDate() {
     data.before += data.today;
     data.today = 0;
     data.day = currentDay;
+    save();
+  }
+  if (data.workdaysOverride !== null && data.workdaysOverrideMonth !== currentMonth) {
+    data.workdaysOverride = null;
+    data.workdaysOverrideMonth = '';
     save();
   }
 }
@@ -127,14 +137,21 @@ function snapshot() {
   const year = now.getFullYear();
   const month = now.getMonth();
   const days = new Date(year, month + 1, 0).getDate();
-  let remainingDays = 0;
-  let workdaysInMonth = 0;
+  let calendarRemainingDays = 0;
+  let calendarWorkdaysInMonth = 0;
   for (let day = 1; day <= days; day += 1) {
     if (isWorkday(new Date(year, month, day))) {
-      workdaysInMonth += 1;
-      if (day >= now.getDate()) remainingDays += 1;
+      calendarWorkdaysInMonth += 1;
+      if (day >= now.getDate()) calendarRemainingDays += 1;
     }
   }
+  const workday = isWorkday(now);
+  const calendarElapsedWorkdays = Math.max(0, calendarWorkdaysInMonth - calendarRemainingDays + (workday ? 1 : 0));
+  const workdaysInMonth = data.workdaysOverride ?? calendarWorkdaysInMonth;
+  const remainingDays = data.workdaysOverride === null
+    ? calendarRemainingDays
+    : Math.max(0, workdaysInMonth - calendarElapsedWorkdays);
+  const elapsedWorkdays = Math.min(workdaysInMonth, calendarElapsedWorkdays);
   const today = stagedToday ?? data.today;
   const collected = data.before + today;
   let tier = ['Base', 0, .0535];
@@ -145,8 +162,6 @@ function snapshot() {
     if (collected >= minimum) tier = candidate;
     else { next = minimum - collected; break; }
   }
-  const workday = isWorkday(now);
-  const elapsedWorkdays = Math.max(0, workdaysInMonth - remainingDays + (workday ? 1 : 0));
   const daily = remainingDays ? Math.max(0, (data.goal - data.before) / remainingDays) : Math.max(0, data.goal - collected);
   const todayLeft = workday ? Math.max(0, daily - today) : 0;
   return {
@@ -256,6 +271,20 @@ function parseExpression(value) {
 }
 
 function closeSettings() { $('settingsModal').hidden = true; }
+function automaticWorkdays(date = new Date()) {
+  let count = 0;
+  const days = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  for (let day = 1; day <= days; day += 1) {
+    if (isWorkday(new Date(date.getFullYear(), date.getMonth(), day))) count += 1;
+  }
+  return count;
+}
+function updateWorkdaysSummary() {
+  const automaticCount = automaticWorkdays();
+  const count = stagedWorkdaysOverride ?? automaticCount;
+  $('workdaysSummary').textContent = `${count} days · ${stagedWorkdaysOverride === null ? 'automatic' : 'custom'}`;
+  $('automaticWorkdaysButton').hidden = stagedWorkdaysOverride === null;
+}
 function selectedRate(form) {
   if (form.currency.value === 'USD') return 1;
   if (form.currency.value === 'MXN') return data.rate;
@@ -268,6 +297,7 @@ function refreshCurrencyFields(form) {
 }
 function openSettings() {
   const form = $('settingsForm');
+  stagedWorkdaysOverride = data.workdaysOverride;
   form.currency.value = data.currency;
   form.customCurrency.value = data.customCurrency;
   form.currencyRate.value = payoutRate();
@@ -275,6 +305,10 @@ function openSettings() {
   form.before.value = data.before;
   form.today.value = data.today;
   form.hours.value = data.hours;
+  form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
+  form.workdays.required = false;
+  $('workdaysFields').hidden = true;
+  updateWorkdaysSummary();
   refreshCurrencyFields(form);
   $('settingsModal').hidden = false;
   form.goal.focus();
@@ -298,6 +332,24 @@ $('closeModal').addEventListener('click', closeSettings);
 $('cancelModal').addEventListener('click', closeSettings);
 $('settingsModal').addEventListener('click', (event) => { if (event.target === $('settingsModal')) closeSettings(); });
 $('settingsForm').currency.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form));
+$('editWorkdaysButton').addEventListener('click', () => {
+  const form = $('settingsForm');
+  form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
+  $('workdaysFields').hidden = false;
+  $('automaticWorkdaysButton').hidden = false;
+  form.workdays.required = true;
+  form.workdays.focus();
+});
+$('settingsForm').workdays.addEventListener('input', (event) => {
+  const count = clamp(Math.round(amount(event.currentTarget.value)), 1, 31);
+  $('workdaysSummary').textContent = `${count} days · custom`;
+});
+$('automaticWorkdaysButton').addEventListener('click', () => {
+  stagedWorkdaysOverride = null;
+  $('workdaysFields').hidden = true;
+  $('settingsForm').workdays.required = false;
+  updateWorkdaysSummary();
+});
 $('settingsForm').addEventListener('submit', (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -309,10 +361,14 @@ $('settingsForm').addEventListener('submit', (event) => {
   data.before = amount(form.before.value);
   data.today = amount(form.today.value);
   data.hours = Math.max(.1, amount(form.hours.value, defaults.hours));
+  if (!$('workdaysFields').hidden) stagedWorkdaysOverride = clamp(Math.round(amount(form.workdays.value, automaticWorkdays())), 1, 31);
+  data.workdaysOverride = stagedWorkdaysOverride;
+  data.workdaysOverrideMonth = stagedWorkdaysOverride === null ? '' : monthKey(new Date());
   data.month = monthKey(new Date());
   data.day = dateKey(new Date());
   save();
   closeSettings();
+  stagedWorkdaysOverride = null;
   render();
 });
 $('todayButton').addEventListener('click', () => {
