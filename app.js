@@ -206,17 +206,33 @@ function render() {
 function renderPayoutTiers(view) {
   const list = $('tierList');
   const tiersToShow = tiers.slice(0, visibleTierCount);
-  list.replaceChildren(...tiersToShow.map((tier) => {
+  const rows = tiersToShow.map((tier) => {
     const [name, hourlyMinimum, commissionRate] = tier;
     const minimumCollection = hourlyMinimum * data.hours * view.workdaysInMonth;
     const row = document.createElement('article');
     row.className = `tier-list-row${view.tier[0] === name ? ' active' : ''}`;
-    row.innerHTML = `<div><strong>${name}</strong><span>${money(minimumCollection)} collection minimum</span></div><div class="tier-list-payout"><strong>${payoutMoney(minimumCollection * commissionRate)}</strong><span>${(commissionRate * 100).toFixed(2)}% commission</span></div>`;
+    const details = document.createElement('div');
+    details.className = 'tier-list-details';
+    const level = document.createElement('strong');
+    level.textContent = name;
+    const minimum = document.createElement('span');
+    minimum.textContent = `${money(minimumCollection)} collection minimum`;
+    details.append(level, minimum);
+
+    const payout = document.createElement('div');
+    payout.className = 'tier-list-payout';
+    const payoutAmount = document.createElement('strong');
+    payoutAmount.textContent = payoutMoney(minimumCollection * commissionRate);
+    const rate = document.createElement('span');
+    rate.textContent = `${(commissionRate * 100).toFixed(2)}% commission`;
+    payout.append(payoutAmount, rate);
+    row.append(details, payout);
     return row;
-  }));
+  });
+  list.replaceChildren(...rows);
   const expanded = visibleTierCount === tiers.length;
   $('tierCount').textContent = `${visibleTierCount} of ${tiers.length}`;
-  $('tierListToggle').innerHTML = expanded ? 'Show fewer levels <span aria-hidden="true">−</span>' : 'Show 5 more levels <span aria-hidden="true">+</span>';
+  $('tierListToggle').textContent = expanded ? '− Show only the first 5 levels' : 'Add 5 more levels +';
   $('tierListToggle').setAttribute('aria-expanded', String(expanded));
 }
 
