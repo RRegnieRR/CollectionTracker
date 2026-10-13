@@ -45,6 +45,7 @@ function normalise(values) {
 
 let data = normalise({ ...defaults, ...readData() });
 let stagedToday = null;
+let visibleTierCount = 5;
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
 function payoutCurrency() { return data.currency === 'CUSTOM' ? data.customCurrency : data.currency; }
 function payoutRate() { return payoutCurrency() === 'USD' ? 1 : data.currencyRate; }
@@ -199,6 +200,24 @@ function render() {
   $('tierRate').textContent = `${(view.tier[2] * 100).toFixed(2)}%`;
   setProgress('tierProgressFill', view.next ? view.collected / (view.collected + view.next) * 100 : 100);
   $('tierCopy').textContent = view.next ? `${money(view.next)} more in collections to reach the next commission tier.` : 'You are at the highest available commission tier.';
+  renderPayoutTiers(view);
+}
+
+function renderPayoutTiers(view) {
+  const list = $('tierList');
+  const tiersToShow = tiers.slice(0, visibleTierCount);
+  list.replaceChildren(...tiersToShow.map((tier) => {
+    const [name, hourlyMinimum, commissionRate] = tier;
+    const minimumCollection = hourlyMinimum * data.hours * view.workdaysInMonth;
+    const row = document.createElement('article');
+    row.className = `tier-list-row${view.tier[0] === name ? ' active' : ''}`;
+    row.innerHTML = `<div><strong>${name}</strong><span>${money(minimumCollection)} collection minimum</span></div><div class="tier-list-payout"><strong>${payoutMoney(minimumCollection * commissionRate)}</strong><span>${(commissionRate * 100).toFixed(2)}% commission</span></div>`;
+    return row;
+  }));
+  const expanded = visibleTierCount === tiers.length;
+  $('tierCount').textContent = `${visibleTierCount} of ${tiers.length}`;
+  $('tierListToggle').innerHTML = expanded ? 'Show fewer levels <span aria-hidden="true">−</span>' : 'Show 5 more levels <span aria-hidden="true">+</span>';
+  $('tierListToggle').setAttribute('aria-expanded', String(expanded));
 }
 
 function parseExpression(value) {
@@ -284,14 +303,9 @@ $('todayEditor').addEventListener('input', (event) => {
   render();
 });
 $('todayEditor').addEventListener('blur', () => closeTodayEditor(true));
-$('resetButton').addEventListener('click', () => {
-  if (confirm('Reset all collection data?')) {
-    data = normalise({ ...defaults, webInitialised: true });
-    data.month = monthKey(new Date());
-    data.day = dateKey(new Date());
-    save();
-    render();
-  }
+$('tierListToggle').addEventListener('click', () => {
+  visibleTierCount = visibleTierCount === 5 ? tiers.length : 5;
+  render();
 });
 
 render();
