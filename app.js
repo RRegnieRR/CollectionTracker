@@ -210,10 +210,10 @@ function renderPayoutTiers(view) {
   const rows = tiersToShow.map((tier) => {
     const [name, hourlyMinimum, commissionRate] = tier;
     const levelNumber = Number(name.replace('Level ', ''));
-    const lockedBySchedule = levelThreeCap && levelNumber > maxTierForSixOrFewerHours;
+    const aboveScheduleCap = levelThreeCap && levelNumber > maxTierForSixOrFewerHours;
     const minimumCollection = hourlyMinimum * data.hours * view.workdaysInMonth;
     const row = document.createElement('article');
-    row.className = `tier-list-row${view.tier[0] === name ? ' active' : ''}${lockedBySchedule ? ' locked' : ''}`;
+    row.className = `tier-list-row${view.tier[0] === name ? ' active' : ''}${aboveScheduleCap ? ' above-cap' : ''}`;
     const details = document.createElement('div');
     details.className = 'tier-list-details';
     const level = document.createElement('strong');
@@ -226,11 +226,6 @@ function renderPayoutTiers(view) {
       cap.className = 'tier-cap-label';
       cap.textContent = 'Maximum at 6 or fewer hours/day';
       details.append(cap);
-    } else if (lockedBySchedule) {
-      const locked = document.createElement('span');
-      locked.className = 'tier-cap-label';
-      locked.textContent = 'Unavailable at 6 or fewer hours/day';
-      details.append(locked);
     }
 
     const payout = document.createElement('div');
@@ -238,9 +233,7 @@ function renderPayoutTiers(view) {
     const payoutAmount = document.createElement('strong');
     payoutAmount.textContent = payoutMoney(minimumCollection * commissionRate);
     const rate = document.createElement('span');
-    rate.textContent = lockedBySchedule
-      ? `${(commissionRate * 100).toFixed(2)}% · Locked by Level 3 cap`
-      : `${(commissionRate * 100).toFixed(2)}% commission`;
+    rate.textContent = `${(commissionRate * 100).toFixed(2)}% commission`;
     payout.append(payoutAmount, rate);
     row.append(details, payout);
     return row;
@@ -248,11 +241,11 @@ function renderPayoutTiers(view) {
   list.replaceChildren(...rows);
   const expanded = visibleTierCount === tiers.length;
   $('tierCount').textContent = levelThreeCap
-    ? `${maxTierForSixOrFewerHours} of ${tiers.length} available`
-    : `${visibleTierCount} of ${tiers.length}`;
+    ? 'Level 3 cap'
+    : `${tiers.length} levels`;
   $('payoutTiersCopy').textContent = levelThreeCap
-    ? 'At 6 or fewer hours/day, commission is capped at Level 3. Higher levels are shown for reference and unlock above 6 hours/day.'
-    : 'All 10 commission levels are available above 6 hours/day. Payouts are estimated at each level’s collection minimum.';
+    ? 'Maximum commission level at 6 or fewer hours per day.'
+    : 'All 10 levels are available above 6 hours per day.';
   $('tierListToggle').textContent = expanded ? '− Show only the first 5 levels' : 'Add 5 more levels +';
   $('tierListToggle').setAttribute('aria-expanded', String(expanded));
 }
