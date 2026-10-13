@@ -221,11 +221,13 @@ function render() {
 function renderPayoutTiers(view) {
   const list = $('tierList');
   const levelThreeCap = data.hours <= 6;
+  const cappedCommissionRate = tiers[maxTierForSixOrFewerHours - 1][2];
   const tiersToShow = tiers.slice(0, visibleTierCount);
   const rows = tiersToShow.map((tier) => {
     const [name, hourlyMinimum, commissionRate] = tier;
     const levelNumber = Number(name.replace('Level ', ''));
     const aboveScheduleCap = levelThreeCap && levelNumber > maxTierForSixOrFewerHours;
+    const displayedCommissionRate = aboveScheduleCap ? cappedCommissionRate : commissionRate;
     const minimumCollection = hourlyMinimum * data.hours * view.workdaysInMonth;
     const row = document.createElement('article');
     row.className = `tier-list-row${view.tier[0] === name ? ' active' : ''}${aboveScheduleCap ? ' above-cap' : ''}`;
@@ -246,9 +248,9 @@ function renderPayoutTiers(view) {
     const payout = document.createElement('div');
     payout.className = 'tier-list-payout';
     const payoutAmount = document.createElement('strong');
-    payoutAmount.textContent = payoutMoney(minimumCollection * commissionRate);
+    payoutAmount.textContent = payoutMoney(minimumCollection * displayedCommissionRate);
     const rate = document.createElement('span');
-    rate.textContent = `${(commissionRate * 100).toFixed(2)}% commission`;
+    rate.textContent = `${(displayedCommissionRate * 100).toFixed(2)}% commission`;
     payout.append(payoutAmount, rate);
     row.append(details, payout);
     return row;
