@@ -1,5 +1,9 @@
 const KEY = 'collection-tracker-web-v1';
-const defaults = { goal: 0, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
+const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
+const tiers = [
+  ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 180, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
+  ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
+];
 const originalWindowsValues = {
   goal: 29358,
   before: 8531,
@@ -29,10 +33,14 @@ function readData() {
 
 function normalise(values) {
   const currency = ['USD', 'MXN', 'CUSTOM'].includes(String(values.currency || 'USD').toUpperCase()) ? String(values.currency || 'USD').toUpperCase() : 'USD';
+  const savedGoalTier = Number(values.goalTier);
+  const hasValidGoalTier = values.goalMode === 'tier' && values.goalTier !== null && values.goalTier !== '' && Number.isInteger(savedGoalTier) && savedGoalTier >= 0 && savedGoalTier < tiers.length;
   return {
     ...defaults,
     ...values,
     goal: amount(values.goal),
+    goalMode: hasValidGoalTier ? 'tier' : 'custom',
+    goalTier: hasValidGoalTier ? savedGoalTier : null,
     before: amount(values.before),
     today: amount(values.today),
     hours: Math.max(0.1, amount(values.hours, defaults.hours)),
@@ -125,11 +133,12 @@ function isWorkday(date) {
   return date.getDay() !== 0 && date.getDay() !== 6 && !holidays(date.getFullYear()).includes(dateKey(date));
 }
 
-const tiers = [
-  ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 180, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
-  ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
-];
 const maxTierForSixOrFewerHours = 3;
+
+function tierGoal(index, hours, workdays) {
+  const tier = tiers[index];
+  return tier ? tier[1] * Math.max(0.1, amount(hours, defaults.hours)) * Math.max(1, amount(workdays, 1)) : 0;
+}
 
 function snapshot() {
   ensureCurrentDate();
@@ -287,6 +296,36 @@ function updateWorkdaysSummary() {
   $('workdaysSummary').textContent = `${count} days · ${stagedWorkdaysOverride === null ? 'automatic' : 'custom'}`;
   $('automaticWorkdaysButton').hidden = stagedWorkdaysOverride === null;
 }
+function goalWorkdays(form) {
+  return $('workdaysFields').hidden
+    ? (stagedWorkdaysOverride ?? automaticWorkdays())
+    : clamp(Math.round(amount(form.workdays.value, automaticWorkdays())), 1, 31);
+}
+function updateGoalOptions(form) {
+  const select = form.goalMode;
+  const selectedValue = select.value || (data.goalMode === 'tier' ? `tier-${data.goalTier}` : 'custom');
+  const hours = Math.max(.1, amount(form.hours.value, defaults.hours));
+  const workdays = goalWorkdays(form);
+  select.replaceChildren(...tiers.map((tier, index) => {
+    const option = document.createElement('option');
+    option.value = `tier-${index}`;
+    option.textContent = `${tier[0]} — ${money(tierGoal(index, hours, workdays))}`;
+    return option;
+  }), Object.assign(document.createElement('option'), { value: 'custom', textContent: 'Personal amount' }));
+  select.value = [...select.options].some((option) => option.value === selectedValue) ? selectedValue : 'custom';
+  const tierIndex = Number(select.value.replace('tier-', ''));
+  const isTier = Number.isInteger(tierIndex) && tierIndex >= 0 && tierIndex < tiers.length;
+  $('customGoalField').hidden = isTier;
+  $('tierGoalHint').hidden = !isTier;
+  if (isTier) $('tierGoalHint').textContent = `${tiers[tierIndex][0]} is ${money(tierGoal(tierIndex, hours, workdays))} for ${hours} hours/day across ${workdays} workdays.`;
+}
+function updateGoalSummary(form) {
+  const selected = form.goalMode.value;
+  const tierIndex = Number(selected.replace('tier-', ''));
+  $('goalSummary').textContent = Number.isInteger(tierIndex) && tiers[tierIndex]
+    ? `${tiers[tierIndex][0]} · ${money(tierGoal(tierIndex, form.hours.value, goalWorkdays(form)))}`
+    : `Personal amount · ${money(form.goal.value)}`;
+}
 function selectedRate(form) {
   if (form.currency.value === 'USD') return 1;
   if (form.currency.value === 'MXN') return data.rate;
@@ -310,10 +349,14 @@ function openSettings() {
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
   form.workdays.required = false;
   $('workdaysFields').hidden = true;
+  form.goalMode.value = data.goalMode === 'tier' ? `tier-${data.goalTier}` : 'custom';
+  $('goalFields').hidden = true;
   updateWorkdaysSummary();
+  updateGoalOptions(form);
+  updateGoalSummary(form);
   refreshCurrencyFields(form);
   $('settingsModal').hidden = false;
-  form.goal.focus();
+  $('editGoalButton').focus();
 }
 function closeTodayEditor(commit) {
   const editor = $('todayEditor');
@@ -334,23 +377,46 @@ $('closeModal').addEventListener('click', closeSettings);
 $('cancelModal').addEventListener('click', closeSettings);
 $('settingsModal').addEventListener('click', (event) => { if (event.target === $('settingsModal')) closeSettings(); });
 $('settingsForm').currency.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form));
+$('editGoalButton').addEventListener('click', () => {
+  const form = $('settingsForm');
+  $('goalFields').hidden = false;
+  updateGoalOptions(form);
+  form.goalMode.focus();
+});
+$('settingsForm').goalMode.addEventListener('change', (event) => {
+  updateGoalOptions(event.currentTarget.form);
+  updateGoalSummary(event.currentTarget.form);
+});
+$('settingsForm').goal.addEventListener('input', (event) => updateGoalSummary(event.currentTarget.form));
+$('settingsForm').hours.addEventListener('input', (event) => {
+  updateGoalOptions(event.currentTarget.form);
+  updateGoalSummary(event.currentTarget.form);
+});
 $('editWorkdaysButton').addEventListener('click', () => {
   const form = $('settingsForm');
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
   $('workdaysFields').hidden = false;
   $('automaticWorkdaysButton').hidden = false;
   form.workdays.required = true;
+  updateGoalOptions(form);
+  updateGoalSummary(form);
   form.workdays.focus();
 });
 $('settingsForm').workdays.addEventListener('input', (event) => {
+  const form = event.currentTarget.form;
   const count = clamp(Math.round(amount(event.currentTarget.value)), 1, 31);
   $('workdaysSummary').textContent = `${count} days · custom`;
+  updateGoalOptions(form);
+  updateGoalSummary(form);
 });
 $('automaticWorkdaysButton').addEventListener('click', () => {
+  const form = $('settingsForm');
   stagedWorkdaysOverride = null;
   $('workdaysFields').hidden = true;
-  $('settingsForm').workdays.required = false;
+  form.workdays.required = false;
   updateWorkdaysSummary();
+  updateGoalOptions(form);
+  updateGoalSummary(form);
 });
 $('settingsForm').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -359,11 +425,18 @@ $('settingsForm').addEventListener('submit', (event) => {
   data.currency = form.currency.value;
   data.customCurrency = /^[A-Za-z]{3}$/.test(form.customCurrency.value) ? form.customCurrency.value.toUpperCase() : defaults.customCurrency;
   data.currencyRate = currencyRate;
-  data.goal = amount(form.goal.value);
+  const selectedGoalTier = Number(form.goalMode.value.replace('tier-', ''));
+  const goalUsesTier = Number.isInteger(selectedGoalTier) && selectedGoalTier >= 0 && selectedGoalTier < tiers.length;
+  const submittedWorkdays = !$('workdaysFields').hidden
+    ? clamp(Math.round(amount(form.workdays.value, automaticWorkdays())), 1, 31)
+    : (stagedWorkdaysOverride ?? automaticWorkdays());
+  data.goalMode = goalUsesTier ? 'tier' : 'custom';
+  data.goalTier = goalUsesTier ? selectedGoalTier : null;
+  data.goal = goalUsesTier ? tierGoal(selectedGoalTier, form.hours.value, submittedWorkdays) : amount(form.goal.value);
   data.before = amount(form.before.value);
   data.today = amount(form.today.value);
   data.hours = Math.max(.1, amount(form.hours.value, defaults.hours));
-  if (!$('workdaysFields').hidden) stagedWorkdaysOverride = clamp(Math.round(amount(form.workdays.value, automaticWorkdays())), 1, 31);
+  if (!$('workdaysFields').hidden) stagedWorkdaysOverride = submittedWorkdays;
   data.workdaysOverride = stagedWorkdaysOverride;
   data.workdaysOverrideMonth = stagedWorkdaysOverride === null ? '' : monthKey(new Date());
   data.month = monthKey(new Date());

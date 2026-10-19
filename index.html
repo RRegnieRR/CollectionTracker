@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
   <link rel="stylesheet" href="styles.css?v=tiers-cap-simple" />
-  <link rel="stylesheet" href="settings.css?v=settings-workdays" />
+  <link rel="stylesheet" href="settings.css?v=settings-tier-goal" />
 </head>
 <body>
   <main class="shell">
@@ -55,7 +55,8 @@
       <label>Estimated payout currency<select name="currency"><option value="USD">US Dollar (USD)</option><option value="MXN">Mexican Peso (MXN)</option><option value="CUSTOM">Other currency</option></select></label>
       <div id="customCurrencyFields" hidden><label>Currency code<input name="customCurrency" type="text" maxlength="3" placeholder="EUR" autocomplete="off" /></label></div>
       <label>Exchange rate (1 USD equals)<input name="currencyRate" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Monthly goal<input name="goal" type="text" inputmode="decimal" autocomplete="off" /></label>
+      <div class="goal-setting"><div><span>Monthly goal</span><strong id="goalSummary">Personal amount · $0.00</strong></div><button class="secondary-button" id="editGoalButton" type="button">Edit</button></div>
+      <div id="goalFields" hidden><label>Goal target<select name="goalMode" aria-label="Monthly goal target"></select></label><p class="tier-goal-hint" id="tierGoalHint" hidden></p><label id="customGoalField">Personal monthly goal<input name="goal" type="text" inputmode="decimal" autocomplete="off" /></label></div>
       <label>Collected before today<input name="before" type="text" inputmode="decimal" autocomplete="off" /></label>
       <label>Collected today<input name="today" type="text" inputmode="decimal" autocomplete="off" /></label>
       <label>Hours worked per day<input name="hours" type="text" inputmode="decimal" autocomplete="off" /></label>
@@ -64,6 +65,6 @@
       <div class="modal-actions"><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save changes</button></div>
     </form>
   </div>
-  <script src="app.js?v=payout-cap-amount"></script>
+  <script src="app.js?v=tier-goal-selector"></script>
 </body>
 </html>
