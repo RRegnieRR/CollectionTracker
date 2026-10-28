@@ -1,7 +1,7 @@
 const KEY = 'collection-tracker-web-v1';
 const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
 const tiers = [
-  ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 180, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
+  ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 183, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
   ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
 ];
 const originalWindowsValues = {
