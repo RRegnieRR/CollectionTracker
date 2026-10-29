@@ -1,5 +1,5 @@
 const KEY = 'collection-tracker-web-v1';
-const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
+const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, giftCard: 0, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
 const tiers = [
   ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 183, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
   ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
@@ -48,6 +48,7 @@ function normalise(values) {
     currency,
     customCurrency: /^[A-Za-z]{3}$/.test(String(values.customCurrency || '')) ? String(values.customCurrency).toUpperCase() : defaults.customCurrency,
     currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1)),
+    giftCard: amount(values.giftCard),
     workdaysOverride: values.workdaysOverride == null ? null : Math.max(1, Math.min(31, Math.round(amount(values.workdaysOverride)))),
     workdaysOverrideMonth: /^\d{4}-\d{1,2}$/.test(String(values.workdaysOverrideMonth || '')) ? String(values.workdaysOverrideMonth) : ''
   };
@@ -208,7 +209,7 @@ function render() {
   $('goalAmount').textContent = money(data.goal);
   $('nextTierAmount').textContent = money(view.next);
   $('daysLeft').textContent = view.remainingDays;
-  $('payoutAmount').textContent = payoutMoney(view.collected * view.tier[2]);
+  $('payoutAmount').textContent = payoutMoney(view.collected * view.tier[2] + data.giftCard);
   $('todayLabel').textContent = view.workday ? 'Today' : `${view.now.toLocaleDateString('en-US', { weekday: 'long' })} bonus`;
   $('progressText').textContent = view.workday ? `${money(view.today)} of ${money(view.daily)}` : `${money(view.today)} extra`;
   setProgress('progressFill', view.todayProgress);
@@ -346,6 +347,7 @@ function openSettings() {
   form.before.value = data.before;
   form.today.value = data.today;
   form.hours.value = data.hours;
+  form.giftCard.value = data.giftCard;
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
   form.workdays.required = false;
   $('workdaysFields').hidden = true;
@@ -436,6 +438,7 @@ $('settingsForm').addEventListener('submit', (event) => {
   data.before = amount(form.before.value);
   data.today = amount(form.today.value);
   data.hours = Math.max(.1, amount(form.hours.value, defaults.hours));
+  data.giftCard = amount(form.giftCard.value);
   if (!$('workdaysFields').hidden) stagedWorkdaysOverride = submittedWorkdays;
   data.workdaysOverride = stagedWorkdaysOverride;
   data.workdaysOverrideMonth = stagedWorkdaysOverride === null ? '' : monthKey(new Date());

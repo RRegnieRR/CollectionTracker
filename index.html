@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
   <link rel="stylesheet" href="styles.css?v=tiers-cap-simple" />
-  <link rel="stylesheet" href="settings.css?v=settings-tier-goal" />
+  <link rel="stylesheet" href="settings.css?v=settings-gift-card" />
 </head>
 <body>
   <main class="shell">
@@ -62,9 +62,10 @@
       <label>Hours worked per day<input name="hours" type="text" inputmode="decimal" autocomplete="off" /></label>
       <div class="workdays-setting"><div><span>Workdays this month</span><strong id="workdaysSummary">20 days · automatic</strong></div><button class="secondary-button" id="editWorkdaysButton" type="button">Edit</button></div>
       <div id="workdaysFields" hidden><label>Workdays this month<input name="workdays" type="number" min="1" max="31" step="1" inputmode="numeric" /></label><button class="secondary-button automatic-workdays-button" id="automaticWorkdaysButton" type="button" hidden>Use automatic count</button></div>
+      <label class="gift-card-field">Gift card / bonus (USD)<input name="giftCard" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" /><span>Added to your estimated payout and converted to the selected payout currency.</span></label>
       <div class="modal-actions"><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save changes</button></div>
     </form>
   </div>
-  <script src="app.js?v=tier-goal-selector"></script>
+  <script src="app.js?v=gift-card-bonus"></script>
 </body>
 </html>
