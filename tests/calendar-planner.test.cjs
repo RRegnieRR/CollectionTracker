@@ -79,7 +79,7 @@ test('future recommendations are previews and do not change the active schedule'
   const { context, node } = loadApp();
   const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
     payoutTarget: { value: '40000' },
-    currency: { value: 'MXN' }, currencyRate: { value: '18' }, giftCard: { value: '0' }, hours: { value: '8' } };
+    currency: { value: 'MXN' }, currencyRate: { value: '18' }, giftCard: { value: '0' }, hours: { value: '8' }, comparisonAmount: { value: '' } };
   const before = vm.runInContext('JSON.stringify(data)', context);
   context.updateHoursPlanner(form);
   const recommendations = node('hoursRecommendationOptions').children;
@@ -288,4 +288,46 @@ test('a stale tab cannot overwrite newer collection history from another tab', (
   assert.equal(context.save(), false);
   assert.equal(storage.text, newer);
   assert.match(node('storageStatus').textContent, /another tab/);
+});
+
+test('comparison colors use identical collections and identify tied best payouts', () => {
+  const { context } = loadApp();
+  const allEqual = context.compareHoursAtCollection(1000, 19, 18);
+  assert.ok(allEqual.every((result) => result.standing === 'equal'));
+  const tied = context.compareHoursAtCollection(27000, 19, 18);
+  assert.equal(tied[0].payout, tied[1].payout);
+  assert.equal(tied[0].standing, 'best');
+  assert.equal(tied[1].standing, 'best');
+  assert.equal(tied[2].standing, 'lower');
+  const higherTier = context.compareHoursAtCollection(30000, 19, 18);
+  assert.equal(higherTier[1].standing, 'best');
+  assert.equal(higherTier[0].standing, 'lower');
+  assert.equal(higherTier[2].standing, 'lower');
+  assert.equal(higherTier[1].tier, 'Level 4');
+});
+
+test('all lower-paying options are marked lower and a shared bonus does not change ranking', () => {
+  const { context } = loadApp();
+  const baseline = context.compareHoursAtCollection(35000, 19, 18);
+  assert.equal(baseline[0].standing, 'lower');
+  assert.equal(baseline[1].standing, 'best');
+  assert.equal(baseline[2].standing, 'lower');
+  const withBonus = context.compareHoursAtCollection(35000, 19, 18, 40);
+  baseline.forEach((result, i) => {
+    assert.equal(withBonus[i].standing, result.standing);
+    assert.ok(Math.abs(withBonus[i].payout - result.payout - 720) < 1e-8);
+  });
+});
+
+test('comparison grid includes the exact requested collection without mutating records', () => {
+  const { context, node } = loadApp();
+  const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
+    comparisonAmount: { value: '27664' }, currency: { value: 'MXN' }, currencyRate: { value: '18' }, giftCard: { value: '0' } };
+  const before = savedState(context);
+  context.renderHoursComparison(form);
+  const html = node('plannerComparison').innerHTML;
+  assert.ok(html.includes('$27,664.00'));
+  assert.equal((html.match(/class="comparison-selected"/g) || []).length, 1);
+  assert.equal((html.match(/<td /g) || []).length, (html.match(/<tr/g) || []).length * 3);
+  assert.deepEqual(savedState(context), before);
 });

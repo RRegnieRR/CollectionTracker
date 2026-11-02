@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
   <link rel="stylesheet" href="styles.css?v=simple-dashboard" />
-  <link rel="stylesheet" href="settings.css?v=collection-history" />
+  <link rel="stylesheet" href="settings.css?v=hours-comparison" />
 </head>
 <body>
   <main class="shell">
@@ -50,7 +50,7 @@
   <div class="modal-backdrop" id="settingsModal" hidden>
     <form class="modal" id="settingsForm" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" novalidate>
       <div class="modal-head"><h2 id="settingsTitle">Settings</h2><button class="close-button" id="closeModal" type="button" aria-label="Save and close">×</button></div>
-      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+      <div class="settings-tabs" id="settingsTabs" role="tablist" aria-label="Settings sections">
         <button id="collectionsTab" type="button" role="tab" aria-controls="collectionsSettings" aria-selected="true" tabindex="0">Collections</button>
         <button id="scheduleTab" type="button" role="tab" aria-controls="scheduleSettings" aria-selected="false" tabindex="-1">Planner</button>
         <button id="payoutTab" type="button" role="tab" aria-controls="payoutSettings" aria-selected="false" tabindex="-1">Payout</button>
@@ -87,9 +87,15 @@
       <label>I want to earn · MXN<input name="payoutTarget" type="number" min="1" step="any" required inputmode="decimal" placeholder="40000" /></label>
       </div>
       <div class="settings-column">
-      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Suggested hours</h4><div id="hoursRecommendationOptions"></div><p id="plannerGrowth" class="settings-hint" aria-live="polite"></p><details class="planner-details"><summary>Compare 6, 7 &amp; 8 hours</summary><table class="planner-comparison"><caption id="plannerCompareCaption"></caption><thead><tr><th>Hours</th><th>Payout · MXN</th><th>Tier</th></tr></thead><tbody id="plannerComparison"></tbody></table></details></section>
+      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Suggested hours</h4><div id="hoursRecommendationOptions"></div><p id="plannerGrowth" class="settings-hint" aria-live="polite"></p><button id="compareHoursButton" class="secondary-button" type="button" aria-controls="hoursComparisonSection" aria-expanded="false">Compare 6, 7 &amp; 8 hours →</button></section>
       </div>
       </div>
+      </section>
+      <section id="hoursComparisonSection" class="hours-comparison-section" role="region" aria-label="Payout comparison" hidden>
+      <div class="comparison-toolbar"><button id="backToPlannerButton" class="secondary-button" type="button">← Planner</button><label>Collected · USD<input name="comparisonAmount" type="number" min="0" step="any" inputmode="decimal" disabled /></label></div>
+      <p id="comparisonPeriod" class="settings-hint"></p>
+      <div class="comparison-legend"><span class="comparison-best">↑ Highest payout</span><span class="comparison-lower">↓ Lower payout</span><span>All equal = neutral</span></div>
+      <table class="planner-comparison comparison-grid"><caption>Same collections per row · payouts in MXN</caption><thead><tr><th scope="col">Collected · USD</th><th scope="col">6 h/day<small>Level 3 cap</small></th><th scope="col">7 h/day</th><th scope="col">8 h/day</th></tr></thead><tbody id="plannerComparison"></tbody></table>
       </section>
       <section id="payoutSettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="payoutTab" hidden>
       <div class="settings-pair">
@@ -109,6 +115,6 @@
       <div class="modal-actions"><span id="settingsStatus" role="status" aria-live="polite"></span><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save</button></div>
     </form>
   </div>
-  <script src="app.js?v=collection-history"></script>
+  <script src="app.js?v=hours-comparison"></script>
 </body>
 </html>

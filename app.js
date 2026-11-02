@@ -63,6 +63,7 @@ try { storageVersion = localStorage.getItem(KEY); } catch { /* Saving reports un
 let stagedToday = null;
 let todayEditorDay = null;
 let settingsDay = null;
+let comparingHours = false;
 let stagedWorkdaysOverride = null;
 let visibleTierCount = 5;
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
@@ -228,6 +229,34 @@ function payoutAtCollection(hours, workdays, collection, mxnRate, giftCard = 0) 
   return { tier: tier[0], rate: tier[2], payout: (collection * tier[2] + giftCard) * mxnRate };
 }
 
+function compareHoursAtCollection(collection, workdays, mxnRate, giftCard = 0) {
+  const results = [6, 7, 8].map((hours) => ({ hours, ...payoutAtCollection(hours, workdays, collection, mxnRate, giftCard) }));
+  const cents = results.map((result) => Math.round(result.payout * 100));
+  const best = Math.max(...cents), worst = Math.min(...cents);
+  return results.map((result, index) => ({ ...result,
+    standing: best === worst ? 'equal' : cents[index] === best ? 'best' : 'lower'
+  }));
+}
+
+function renderHoursComparison(form) {
+  const period = plannerPeriod(form);
+  if (!period) return;
+  const reference = amount(form.comparisonAmount.value);
+  const rate = Math.max(.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
+  const giftCard = amount(form.giftCard.value);
+  const first = Math.max(0, Math.floor(reference / 5000) * 5000 - 15000);
+  const amounts = [...new Set([...Array.from({ length: 7 }, (_, i) => first + i * 5000), reference])].sort((a, b) => a - b);
+  const mxn = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
+  $('comparisonPeriod').textContent = `${period.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · ${period.workdays} workdays · 1 USD = ${rate.toFixed(4)} MXN`;
+  $('plannerComparison').innerHTML = amounts.map((collection) => {
+    const results = compareHoursAtCollection(collection, period.workdays, rate, giftCard);
+    return `<tr${collection === reference ? ' class="comparison-selected"' : ''}><th scope="row">${money(collection)}${collection === reference ? '<small>Selected</small>' : ''}</th>${results.map((result) => {
+      const description = result.standing === 'best' ? 'Highest payout' : result.standing === 'lower' ? 'Lower payout' : 'Equal payout';
+      return `<td class="comparison-${result.standing}" aria-label="${result.hours} hours: ${mxn(result.payout)} MXN, ${result.tier}. ${description}."><strong>${result.standing === 'best' ? '↑ ' : result.standing === 'lower' ? '↓ ' : ''}${mxn(result.payout)}</strong><small>${result.tier}${result.hours === 6 && result.tier === 'Level 3' ? ' · capped' : ''}</small></td>`;
+    }).join('')}</tr>`;
+  }).join('');
+}
+
 function growthAlternative(workdays, reference, mxnRate, giftCard = 0) {
   const options = [];
   for (const hours of [7, 8]) {
@@ -303,6 +332,7 @@ function updateHoursPlanner(form) {
   if (!period) {
     list.replaceChildren();
     $('plannerComparison').innerHTML = '';
+    $('compareHoursButton').disabled = true;
     $('plannerGrowth').textContent = '';
     $('plannerWorkdays').textContent = 'Choose a valid year';
     $('plannerPeriodNote').textContent = '';
@@ -316,7 +346,7 @@ function updateHoursPlanner(form) {
   if (!target) {
     list.replaceChildren();
     $('plannerComparison').innerHTML = '';
-    $('plannerCompareCaption').textContent = '';
+    $('compareHoursButton').disabled = true;
     $('plannerGrowth').textContent = 'Enter your payout target.';
     return;
   }
@@ -332,11 +362,9 @@ function updateHoursPlanner(form) {
     button.setAttribute('aria-label', `${plan.hours} hours per day to earn ${mxnMoney(target)} MXN. ${money(plan.more)} USD still to collect. ${pace}.`);
     button.innerHTML = `<div class="plan-heading"><strong>${plan.hours}<small> hours/day</small></strong><b>${plan.hours * 5}h/week</b></div><span>Collect ${money(plan.more)} USD ${period.current ? 'more' : 'total'}</span><span>${pace}</span>`;
     const reference = Math.max(collected, plan.collection);
-    $('plannerCompareCaption').textContent = `At ${money(reference)} USD collected`;
-    $('plannerComparison').innerHTML = [6, 7, 8].map((hours) => {
-      const result = payoutAtCollection(hours, workdays, reference, mxnRate, giftCard);
-      return `<tr${hours === plan.hours ? ' class="recommended-row"' : ''}><th scope="row">${hours} h/day</th><td>${mxnMoney(result.payout)}</td><td>${result.tier}${hours === 6 ? ' · cap L3' : ''}</td></tr>`;
-    }).join('');
+    $('compareHoursButton').disabled = false;
+    if (!comparingHours) form.comparisonAmount.value = reference;
+    if (comparingHours) renderHoursComparison(form);
     const growth = plan.hours === 6 ? growthAlternative(workdays, reference, mxnRate, giftCard) : null;
     $('plannerGrowth').textContent = growth
       ? `To grow: ${growth.hours}h/day unlocks ${growth.tier} at ${money(growth.collection)} USD → ${mxnMoney(growth.payout)} MXN.`
@@ -542,6 +570,7 @@ function refreshCurrencyFields(form, resetRate = false) {
 function openSettings() {
   ensureCurrentDate();
   settingsDay = data.day;
+  showHoursComparison(false);
   const form = $('settingsForm');
   stagedWorkdaysOverride = data.workdaysOverride;
   form.currency.value = data.currency;
@@ -579,6 +608,27 @@ function selectSettingsTab(selectedTab) {
   });
   document.querySelector('.settings-content').scrollTop = 0;
 }
+function showHoursComparison(show) {
+  comparingHours = show;
+  $('compareHoursButton').setAttribute('aria-expanded', String(show));
+  $('hoursComparisonSection').hidden = !show;
+  $('scheduleSettings').hidden = show;
+  $('settingsTabs').hidden = show;
+  $('settingsTitle').textContent = show ? 'Compare hours' : 'Settings';
+  $('settingsForm').classList.toggle('is-comparing', show);
+  $('settingsForm').comparisonAmount.disabled = !show;
+  document.querySelector('.settings-content').scrollTop = 0;
+}
+$('compareHoursButton').addEventListener('click', () => {
+  showHoursComparison(true);
+  renderHoursComparison($('settingsForm'));
+  $('backToPlannerButton').focus();
+});
+$('backToPlannerButton').addEventListener('click', () => {
+  showHoursComparison(false);
+  $('compareHoursButton').focus();
+});
+$('settingsForm').comparisonAmount.addEventListener('input', (event) => renderHoursComparison(event.currentTarget.form));
 document.querySelectorAll('.settings-tabs [role="tab"]').forEach((tab) => {
   tab.addEventListener('click', () => selectSettingsTab(tab));
   tab.addEventListener('keydown', (event) => {
@@ -617,7 +667,7 @@ $('planHoursButton').addEventListener('click', () => {
 $('closeModal').addEventListener('click', () => saveSettings($('settingsForm')));
 $('cancelModal').addEventListener('click', closeSettings);
 const markSettingsChanged = (event) => {
-  if (!['plannerMonth', 'plannerYear', 'historyMonth'].includes(event.target.name)) settingsStatus();
+  if (!['plannerMonth', 'plannerYear', 'historyMonth', 'comparisonAmount'].includes(event.target.name)) settingsStatus();
 };
 $('settingsForm').addEventListener('input', markSettingsChanged);
 $('settingsForm').addEventListener('change', markSettingsChanged);
@@ -627,6 +677,7 @@ $('settingsForm').customCurrency.addEventListener('input', (event) => {
 $('settingsForm').addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
     event.preventDefault();
+    if (comparingHours) { showHoursComparison(false); $('compareHoursButton').focus(); return; }
     closeSettings();
   }
   if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
