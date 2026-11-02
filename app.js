@@ -129,10 +129,12 @@ function last(year, month, weekday) {
   return new Date(year, month, date.getDate() - ((date.getDay() - weekday + 7) % 7));
 }
 function holidays(year) {
-  // The six office holidays; next New Year's can be observed in December.
+  // Office closures; next New Year's can be observed in December.
+  const thanksgiving = nth(year, 10, 4, 4);
   return [
     observedFixed(year, 0, 1), last(year, 4, 1), observedFixed(year, 6, 4),
-    nth(year, 8, 1, 1), nth(year, 10, 4, 4), observedFixed(year, 11, 25),
+    nth(year, 8, 1, 1), thanksgiving, new Date(year, 10, thanksgiving.getDate() + 1),
+    new Date(year, 11, 24), observedFixed(year, 11, 25),
     observedFixed(year + 1, 0, 1)
   ].map(dateKey);
 }
