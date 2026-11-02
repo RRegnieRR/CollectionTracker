@@ -165,6 +165,31 @@ function planForPayout(hours, workdays, payoutTargetMxn, mxnRate, giftCard) {
   return null;
 }
 
+function payoutAtCollection(hours, workdays, collection, mxnRate, giftCard = 0) {
+  let tier = ['Base', 0, .0535];
+  const available = hours <= 6 ? tiers.slice(0, maxTierForSixOrFewerHours) : tiers;
+  for (const candidate of available) {
+    if (collection + 1e-9 >= candidate[1] * hours * workdays) tier = candidate;
+    else break;
+  }
+  return { tier: tier[0], rate: tier[2], payout: (collection * tier[2] + giftCard) * mxnRate };
+}
+
+function growthAlternative(workdays, reference, mxnRate, giftCard = 0) {
+  const options = [];
+  for (const hours of [7, 8]) {
+    for (const tier of tiers.slice(maxTierForSixOrFewerHours)) {
+      const collection = Math.max(reference, tier[1] * hours * workdays);
+      const upgraded = payoutAtCollection(hours, workdays, collection, mxnRate, giftCard);
+      const capped = payoutAtCollection(6, workdays, collection, mxnRate, giftCard);
+      if (upgraded.payout <= capped.payout) continue;
+      options.push({ hours, collection, extraCollection: Math.max(0, collection - reference), gain: upgraded.payout - capped.payout, payout: upgraded.payout, tier: upgraded.tier });
+      break;
+    }
+  }
+  return options.sort((a, b) => a.extraCollection - b.extraCollection || a.hours - b.hours)[0] ?? null;
+}
+
 function workdayCounts(date, now = new Date(), override = null) {
   let total = 0, remaining = 0;
   const current = monthKey(date) === monthKey(now);
@@ -186,9 +211,22 @@ function recommendPayoutRange(minTarget, maxTarget, period, mxnRate, giftCard, c
     const minimumMore = Math.max(0, lower.collection - collected);
     const more = Math.max(0, upper.collection - collected);
     const daily = (amountLeft) => amountLeft === 0 ? 0 : period.remainingDays ? Math.ceil(amountLeft / period.remainingDays * 100) / 100 : null;
-    return { hours, minTarget, maxTarget, minimumMore, more, minimumDaily: daily(minimumMore), daily: daily(more), collection: upper.collection };
+    const reference = Math.max(collected, upper.collection);
+    const projected = payoutAtCollection(hours, period.workdays, reference, mxnRate, giftCard);
+    return { hours, minTarget, maxTarget, minimumMore, more, minimumDaily: daily(minimumMore), daily: daily(more), collection: upper.collection, projectedPayout: projected.payout };
   });
-  return candidates.reduce((best, plan) => !best || plan.more < best.more ? plan : best, null);
+  return candidates.reduce((best, plan) => !best || plan.more < best.more || (plan.more === best.more && plan.projectedPayout > best.projectedPayout) ? plan : best, null);
+}
+
+function setupPlannerBands(form) {
+  const upper = clamp(Math.ceil(amount(form.payoutTargetMax.value, 40000) / 5000) * 5000, 20000, 100000);
+  form.plannerBand.replaceChildren(...Array.from({ length: 17 }, (_, index) => {
+    const max = 20000 + index * 5000;
+    return Object.assign(document.createElement('option'), { value: String(max), textContent: `${mxnMoney(max - 5000)}–${mxnMoney(max)} MXN` });
+  }));
+  form.plannerBand.value = String(upper);
+  form.payoutTargetMin.value = upper - 5000;
+  form.payoutTargetMax.value = upper;
 }
 
 function mxnMoney(value) {
@@ -224,6 +262,8 @@ function updateHoursPlanner(form) {
   const period = plannerPeriod(form);
   if (!period) {
     list.replaceChildren();
+    $('plannerComparison').innerHTML = '';
+    $('plannerGrowth').textContent = '';
     $('plannerWorkdays').textContent = 'Choose a valid year';
     $('plannerPeriodNote').textContent = '';
     return;
@@ -237,9 +277,7 @@ function updateHoursPlanner(form) {
   const mxnRate = Math.max(0.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
   const giftCard = amount(form.giftCard.value);
   const collected = period.current ? amount(form.before.value) + amount(form.today.value) : 0;
-  const ranges = [[20000, 30000], [30000, 40000], [40000, 50000]];
-  if (!ranges.some(([min, max]) => min === minTarget && max === maxTarget)) ranges.push([minTarget, maxTarget]);
-  list.replaceChildren(...ranges.map(([min, max]) => {
+  list.replaceChildren(...[[minTarget, maxTarget]].map(([min, max]) => {
     const plan = recommendPayoutRange(min, max, period, mxnRate, giftCard, collected);
     const button = document.createElement('article');
     button.className = 'hours-plan-option';
@@ -247,7 +285,17 @@ function updateHoursPlanner(form) {
     const range = `${mxnMoney(min)}–${mxnMoney(max)} MXN`;
     button.title = `${money(plan.minimumMore)}–${money(plan.more)} USD still to collect. Hours are chosen for the upper target; tier jumps may exceed it. ${plan.hours * 5} hours/week.`;
     button.setAttribute('aria-label', `${range}: ${plan.hours} hours per day, ${plan.hours * 5} hours per week. ${pace}. ${button.title}`);
-    button.innerHTML = `<div class="plan-heading"><strong>${range}</strong><b>${plan.hours} h/day</b></div><span>${pace}</span>`;
+    button.innerHTML = `<div class="plan-heading"><strong>Least collection</strong><b>${plan.hours} h/day</b></div><span>${money(plan.more)} USD ${period.current ? 'more' : 'total'} · ${pace}</span>`;
+    const reference = Math.max(collected, plan.collection);
+    $('plannerCompareCaption').textContent = `At ${money(reference)} USD collected`;
+    $('plannerComparison').innerHTML = [6, 7, 8].map((hours) => {
+      const result = payoutAtCollection(hours, workdays, reference, mxnRate, giftCard);
+      return `<tr${hours === plan.hours ? ' class="recommended-row"' : ''}><th scope="row">${hours} h/day</th><td>${mxnMoney(result.payout)}</td><td>${result.tier}${hours === 6 ? ' · cap L3' : ''}</td></tr>`;
+    }).join('');
+    const growth = plan.hours === 6 ? growthAlternative(workdays, reference, mxnRate, giftCard) : null;
+    $('plannerGrowth').textContent = growth
+      ? `More room to earn: ${growth.hours} h/day reaches ${growth.tier} at ${money(growth.collection)} USD. That pays ${mxnMoney(growth.payout)} MXN—${mxnMoney(growth.gain)} more than 6h at the same collection.`
+      : `${plan.hours} h/day ${plan.hours > 6 ? 'avoids the Level 3 cap.' : 'needs less collection for this target.'}`;
     return button;
   }));
 }
@@ -459,6 +507,7 @@ function openSettings() {
   form.giftCard.value = data.giftCard;
   form.payoutTargetMin.value = data.payoutTargetMin;
   form.payoutTargetMax.value = data.payoutTargetMax;
+  setupPlannerBands(form);
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
   form.workdays.required = false;
   setSettingsEditor('workdaysFields', false);
@@ -566,6 +615,12 @@ $('settingsForm').hours.addEventListener('input', (event) => {
 });
 ['plannerMonth', 'plannerYear'].forEach((field) => {
   $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
+});
+$('settingsForm').plannerBand.addEventListener('change', (event) => {
+  const form = event.currentTarget.form;
+  form.payoutTargetMax.value = Number(event.currentTarget.value);
+  form.payoutTargetMin.value = Number(event.currentTarget.value) - 5000;
+  updateHoursPlanner(form);
 });
 $('plannerThisMonth').addEventListener('click', () => {
   const form = $('settingsForm');

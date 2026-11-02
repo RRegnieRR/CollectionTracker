@@ -82,7 +82,7 @@ test('future recommendations are previews and do not change the active schedule'
   const before = vm.runInContext('JSON.stringify(data)', context);
   context.updateHoursPlanner(form);
   const recommendations = node('hoursRecommendationOptions').children;
-  assert.equal(recommendations.length, 3);
+  assert.equal(recommendations.length, 1);
   recommendations.forEach((recommendation) => {
     assert.equal(recommendation.tagName, 'article');
     assert.equal(recommendation.dataset.hours, undefined);
@@ -140,4 +140,46 @@ test('low targets can use base commission and a bonus can cover the target', () 
   const covered = context.recommendPayoutRange(20000, 30000, { workdays: 21, remainingDays: 21 }, 18, 2000);
   assert.equal(covered.more, 0);
   assert.equal(covered.hours, 6);
+});
+
+test('six hours stays capped while seven hours unlocks a higher tier at the correct threshold', () => {
+  const { context } = loadApp();
+  const six = context.payoutAtCollection(6, 19, 27664, 18);
+  const seven = context.payoutAtCollection(7, 19, 27664, 18);
+  assert.equal(six.tier, 'Level 3');
+  assert.equal(seven.tier, 'Level 4');
+  assert.ok(seven.payout > six.payout);
+  assert.equal(context.payoutAtCollection(7, 19, 27000, 18).tier, 'Level 3');
+  assert.equal(context.payoutAtCollection(6, 19, 100000, 18).tier, 'Level 3');
+  assert.equal(context.payoutAtCollection(7, 19, 100000, 18).tier, 'Level 10');
+});
+
+test('growth suggestion identifies extra collection and compares payouts at equal collections', () => {
+  const { context } = loadApp();
+  const growth = context.growthAlternative(19, 26000, 18);
+  assert.equal(growth.hours, 7);
+  assert.equal(growth.collection, 27664);
+  assert.equal(growth.extraCollection, 1664);
+  assert.equal(growth.tier, 'Level 4');
+  const six = context.payoutAtCollection(6, 19, growth.collection, 18);
+  assert.ok(Math.abs(growth.gain - (growth.payout - six.payout)) < 1e-8);
+});
+
+test('when collection targets tie, favor the schedule that pays more at that collection', () => {
+  const { context } = loadApp();
+  const plan = context.recommendPayoutRange(35000, 40000, { workdays: 19, remainingDays: 5 }, 18, 0, 35000);
+  assert.equal(plan.more, 0);
+  assert.equal(plan.hours, 7);
+});
+
+test('payout selection advances in 5000 MXN bands and preserves the saved upper target', () => {
+  const { context, node } = loadApp();
+  const form = { plannerBand: node('band'), payoutTargetMin: { value: '30000' }, payoutTargetMax: { value: '40000' } };
+  context.setupPlannerBands(form);
+  const options = form.plannerBand.children;
+  assert.equal(options.length, 17);
+  assert.equal(options[0].value, '20000');
+  for (let i = 1; i < options.length; i++) assert.equal(Number(options[i].value) - Number(options[i - 1].value), 5000);
+  assert.equal(form.plannerBand.value, '40000');
+  assert.equal(form.payoutTargetMin.value, 35000);
 });
