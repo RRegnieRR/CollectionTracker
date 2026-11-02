@@ -255,15 +255,10 @@ function comparisonCollections(workdays) {
   return [...amounts].sort((a, b) => a - b);
 }
 
-function comparisonThresholdLabel(collection, workdays) {
-  const labels = [];
-  for (const hours of [6, 7, 8]) {
-    const count = hours === 6 ? maxTierForSixOrFewerHours : tiers.length;
-    tiers.slice(0, count).forEach((tier, index) => {
-      if (Math.abs(tierGoal(index, hours, workdays) - collection) < 1e-7) labels.push(`${hours}h → ${tier[0]}`);
-    });
-  }
-  return labels.join(' · ');
+function tierUnlockedAt(hours, collection, workdays) {
+  const count = hours <= 6 ? maxTierForSixOrFewerHours : tiers.length;
+  const index = tiers.slice(0, count).findIndex((tier, index) => Math.abs(tierGoal(index, hours, workdays) - collection) < 1e-7);
+  return index >= 0 ? tiers[index][0] : null;
 }
 
 function renderHoursComparison(form) {
@@ -277,14 +272,16 @@ function renderHoursComparison(form) {
   const mxn = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
   $('comparisonPeriod').textContent = `${period.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · ${period.workdays} workdays · Payout rate: 1 USD = ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(rate)} MXN`;
   $('comparisonCoverage').textContent = `Payouts in MXN · 8h Level 10 at ${money(levelTen)} USD collected`;
-  const cellContent = (result) => {
+  const cellContent = (result, collection) => {
     const description = result.standing === 'best' ? 'Highest payout' : result.standing === 'lower' ? 'Lower payout' : 'Equal payout';
-    return `<td class="comparison-${result.standing}" aria-label="${result.hours} hours: ${mxn(result.payout)} MXN, ${result.tier}. ${description}."><strong>${result.standing === 'best' ? '↑ ' : result.standing === 'lower' ? '↓ ' : ''}${mxn(result.payout)}</strong><small>${result.tier}${result.hours === 6 && result.tier === 'Level 3' ? ' · capped' : ''}</small></td>`;
+    const unlocked = collection === undefined ? null : tierUnlockedAt(result.hours, collection, period.workdays);
+    const tier = unlocked ? `<span class="tier-unlock">${unlocked} unlocked</span>` : `${result.tier}${result.hours === 6 && result.tier === 'Level 3' ? ' · capped' : ''}`;
+    return `<td class="comparison-${result.standing}" aria-label="${result.hours} hours: ${mxn(result.payout)} MXN, ${result.tier}. ${description}.${unlocked ? ` ${unlocked} unlocked at ${money(collection)} USD collected.` : ''}"><strong>${result.standing === 'best' ? '↑ ' : result.standing === 'lower' ? '↓ ' : ''}${mxn(result.payout)}</strong><small>${tier}</small></td>`;
   };
-  $('comparisonSelected').innerHTML = `<tr class="comparison-selected"><th scope="row">${money(reference)}<small>Your amount</small></th>${compareHoursAtCollection(reference, period.workdays, rate, giftCard).map(cellContent).join('')}</tr>`;
+  $('comparisonSelected').innerHTML = `<tr class="comparison-selected"><th scope="row">${money(reference)}<small>Your amount</small></th>${compareHoursAtCollection(reference, period.workdays, rate, giftCard).map((result) => cellContent(result)).join('')}</tr>`;
   $('plannerComparison').innerHTML = amounts.map((collection) => {
     const results = compareHoursAtCollection(collection, period.workdays, rate, giftCard);
-    return `<tr${collection === levelTen ? ' data-level-ten="true"' : ''}><th scope="row">${money(collection)}<small>${comparisonThresholdLabel(collection, period.workdays)}</small></th>${results.map(cellContent).join('')}</tr>`;
+    return `<tr${collection === levelTen ? ' data-level-ten="true"' : ''}><th scope="row">${money(collection)}</th>${results.map((result) => cellContent(result, collection)).join('')}</tr>`;
   }).join('');
 }
 

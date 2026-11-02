@@ -47,6 +47,7 @@
 .comparison-grid td{background:#f5f6f8}
 .comparison-grid strong{font-size:12px;font-weight:600;white-space:nowrap}
 .comparison-grid small{display:block;margin-top:3px;font-size:10px;color:inherit;font-weight:400}
+.tier-unlock{display:inline-block;max-width:100%;padding:2px 5px;border:1px solid currentColor;border-radius:4px;font-weight:600;line-height:1.2}
 .comparison-grid .comparison-best,.comparison-best{background:#e8f6ec;color:#176b37}
 .comparison-grid .comparison-lower,.comparison-lower{background:#fcebea;color:#a82b27}
 .comparison-selected th{background:#edf4ff;color:#0064ce}

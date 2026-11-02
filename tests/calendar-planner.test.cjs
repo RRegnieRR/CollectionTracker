@@ -360,11 +360,11 @@ test('comparison rows contain only sorted actual tier thresholds for all three s
     hourlyThresholds.slice(0, count).forEach((minimum, i) => {
       const threshold = minimum * hours * 19;
       assert.ok(amounts.includes(threshold));
-      assert.ok(context.comparisonThresholdLabel(threshold, 19).includes(`${hours}h → Level ${i + 1}`));
+      assert.equal(context.tierUnlockedAt(hours, threshold, 19), `Level ${i + 1}`);
     });
   }
   for (let i = 0; i < amounts.length; i++) {
-    assert.ok(context.comparisonThresholdLabel(amounts[i], 19).length > 0);
+    assert.ok([6, 7, 8].some((hours) => context.tierUnlockedAt(hours, amounts[i], 19)));
     if (i) assert.ok(amounts[i] > amounts[i - 1]);
   }
   assert.ok(amounts.length < 40);
@@ -398,4 +398,19 @@ test('comparison displays and calculates using the Payout form rate immediately'
   form.currencyRate.value = '19';
   context.renderHoursComparison(form);
   assert.ok(node('comparisonPeriod').textContent.includes('1 USD = 19 MXN'));
+});
+
+test('new level badges appear only in the schedule column that unlocks that level', () => {
+  const { context, node } = loadApp();
+  const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
+    comparisonAmount: { value: '27000' }, currency: { value: 'MXN' }, currencyRate: { value: '18.65' }, giftCard: { value: '0' } };
+  context.renderHoursComparison(form);
+  const html = node('plannerComparison').innerHTML;
+  const firstRow = html.match(/<tr[^>]*>([\s\S]*?)<\/tr>/)[1];
+  const cells = [...firstRow.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => match[1]);
+  assert.ok(cells[0].includes('Level 1 unlocked'));
+  assert.ok(!cells[1].includes('tier-unlock'));
+  assert.ok(!cells[2].includes('tier-unlock'));
+  assert.ok(!html.includes('6h →'));
+  assert.ok(!node('comparisonSelected').innerHTML.includes('tier-unlock'));
 });
