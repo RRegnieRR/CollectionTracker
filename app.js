@@ -238,19 +238,29 @@ function compareHoursAtCollection(collection, workdays, mxnRate, giftCard = 0) {
   }));
 }
 
+function comparisonCollections(workdays, reference) {
+  const levelTen = tierGoal(tiers.length - 1, 8, workdays);
+  const amounts = new Set(Array.from({ length: Math.floor(levelTen / 5000) + 1 }, (_, i) => i * 5000));
+  // Include every 8-hour tier's exact threshold so no level is skipped.
+  tiers.forEach((tier, index) => amounts.add(tierGoal(index, 8, workdays)));
+  amounts.add(reference);
+  return [...amounts].sort((a, b) => a - b);
+}
+
 function renderHoursComparison(form) {
   const period = plannerPeriod(form);
   if (!period) return;
   const reference = amount(form.comparisonAmount.value);
   const rate = Math.max(.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
   const giftCard = amount(form.giftCard.value);
-  const first = Math.max(0, Math.floor(reference / 5000) * 5000 - 15000);
-  const amounts = [...new Set([...Array.from({ length: 7 }, (_, i) => first + i * 5000), reference])].sort((a, b) => a - b);
+  const levelTen = tierGoal(tiers.length - 1, 8, period.workdays);
+  const amounts = comparisonCollections(period.workdays, reference);
   const mxn = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
   $('comparisonPeriod').textContent = `${period.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · ${period.workdays} workdays · 1 USD = ${rate.toFixed(4)} MXN`;
+  $('comparisonCoverage').textContent = `Payouts in MXN · 8h Level 10 at ${money(levelTen)} USD collected`;
   $('plannerComparison').innerHTML = amounts.map((collection) => {
     const results = compareHoursAtCollection(collection, period.workdays, rate, giftCard);
-    return `<tr${collection === reference ? ' class="comparison-selected"' : ''}><th scope="row">${money(collection)}${collection === reference ? '<small>Selected</small>' : ''}</th>${results.map((result) => {
+    return `<tr${collection === reference ? ' class="comparison-selected"' : ''}${collection === levelTen ? ' data-level-ten="true"' : ''}><th scope="row">${money(collection)}${collection === reference ? '<small>Selected</small>' : ''}${collection === levelTen ? '<small>8h · Level 10</small>' : ''}</th>${results.map((result) => {
       const description = result.standing === 'best' ? 'Highest payout' : result.standing === 'lower' ? 'Lower payout' : 'Equal payout';
       return `<td class="comparison-${result.standing}" aria-label="${result.hours} hours: ${mxn(result.payout)} MXN, ${result.tier}. ${description}."><strong>${result.standing === 'best' ? '↑ ' : result.standing === 'lower' ? '↓ ' : ''}${mxn(result.payout)}</strong><small>${result.tier}${result.hours === 6 && result.tier === 'Level 3' ? ' · capped' : ''}</small></td>`;
     }).join('')}</tr>`;
@@ -627,6 +637,9 @@ $('compareHoursButton').addEventListener('click', () => {
 $('backToPlannerButton').addEventListener('click', () => {
   showHoursComparison(false);
   $('compareHoursButton').focus();
+});
+$('jumpToLevelTenButton').addEventListener('click', () => {
+  document.querySelector('[data-level-ten="true"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
 });
 $('settingsForm').comparisonAmount.addEventListener('input', (event) => renderHoursComparison(event.currentTarget.form));
 document.querySelectorAll('.settings-tabs [role="tab"]').forEach((tab) => {

@@ -331,3 +331,24 @@ test('comparison grid includes the exact requested collection without mutating r
   assert.equal((html.match(/<td /g) || []).length, (html.match(/<tr/g) || []).length * 3);
   assert.deepEqual(savedState(context), before);
 });
+
+test('comparison reaches every exact 8-hour tier threshold through Level 10', () => {
+  const { context } = loadApp();
+  for (const workdays of [19, 21, 31]) {
+    const amounts = context.comparisonCollections(workdays, 27664);
+    const expectedThreshold = 358 * 8 * workdays;
+    assert.equal(amounts[amounts.length - 1], expectedThreshold);
+    assert.equal(context.payoutAtCollection(8, workdays, expectedThreshold, 18).tier, 'Level 10');
+    const reached = new Set(amounts.map((value) => context.payoutAtCollection(8, workdays, value, 18).tier));
+    for (let level = 1; level <= 10; level++) assert.ok(reached.has(`Level ${level}`));
+    assert.equal(new Set(amounts).size, amounts.length);
+  }
+});
+
+test('an entered amount above Level 10 is kept without creating an unbounded table', () => {
+  const { context } = loadApp();
+  const amounts = context.comparisonCollections(19, 1000000);
+  assert.ok(amounts.includes(54416));
+  assert.equal(amounts[amounts.length - 1], 1000000);
+  assert.ok(amounts.length < 40);
+});

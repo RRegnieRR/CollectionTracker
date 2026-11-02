@@ -39,6 +39,10 @@
 .comparison-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:#6b7280}
 .comparison-legend span{padding:4px 7px;border-radius:5px}
 .comparison-grid{table-layout:fixed}
+.comparison-grid thead{position:sticky;top:-2px;background:#fff;z-index:1}
+.comparison-grid tr[data-level-ten] th{font-weight:600;background:#edf4ff;color:#0064ce}
+.comparison-toolbar{flex-wrap:wrap}
+.comparison-toolbar>.text-button{font-size:12px}
 .comparison-grid th,.comparison-grid td{padding:5px 7px;border:2px solid white;font-size:12px;line-height:1.2}
 .comparison-grid td{background:#f5f6f8}
 .comparison-grid strong{font-size:12px;font-weight:600;white-space:nowrap}
