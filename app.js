@@ -1,5 +1,5 @@
 const KEY = 'collection-tracker-web-v1';
-const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, giftCard: 0, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
+const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, giftCard: 0, payoutTargetMin: 30000, payoutTargetMax: 40000, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
 const tiers = [
   ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 183, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
   ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
@@ -34,6 +34,8 @@ function readData() {
 function normalise(values) {
   const currency = ['USD', 'MXN', 'CUSTOM'].includes(String(values.currency || 'USD').toUpperCase()) ? String(values.currency || 'USD').toUpperCase() : 'USD';
   const savedGoalTier = Number(values.goalTier);
+  const payoutTargetMin = Math.max(0, amount(values.payoutTargetMin, defaults.payoutTargetMin));
+  const payoutTargetMax = Math.max(payoutTargetMin, amount(values.payoutTargetMax, defaults.payoutTargetMax));
   const hasValidGoalTier = values.goalMode === 'tier' && values.goalTier !== null && values.goalTier !== '' && Number.isInteger(savedGoalTier) && savedGoalTier >= 0 && savedGoalTier < tiers.length;
   return {
     ...defaults,
@@ -43,12 +45,14 @@ function normalise(values) {
     goalTier: hasValidGoalTier ? savedGoalTier : null,
     before: amount(values.before),
     today: amount(values.today),
-    hours: Math.max(0.1, amount(values.hours, defaults.hours)),
+    hours: Math.min(8, Math.max(0.1, amount(values.hours, defaults.hours))),
     rate: Math.max(0.01, amount(values.rate, defaults.rate)),
     currency,
     customCurrency: /^[A-Za-z]{3}$/.test(String(values.customCurrency || '')) ? String(values.customCurrency).toUpperCase() : defaults.customCurrency,
     currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1)),
     giftCard: amount(values.giftCard),
+    payoutTargetMin,
+    payoutTargetMax,
     workdaysOverride: values.workdaysOverride == null ? null : Math.max(1, Math.min(31, Math.round(amount(values.workdaysOverride)))),
     workdaysOverrideMonth: /^\d{4}-\d{1,2}$/.test(String(values.workdaysOverrideMonth || '')) ? String(values.workdaysOverrideMonth) : ''
   };
@@ -139,6 +143,50 @@ const maxTierForSixOrFewerHours = 3;
 function tierGoal(index, hours, workdays) {
   const tier = tiers[index];
   return tier ? tier[1] * Math.max(0.1, amount(hours, defaults.hours)) * Math.max(1, amount(workdays, 1)) : 0;
+}
+
+function planForPayout(hours, workdays, payoutTargetMxn, mxnRate, giftCard) {
+  const targetUsd = Math.max(0, payoutTargetMxn / mxnRate);
+  if (giftCard >= targetUsd) return { hours, collection: 0, dailyCollection: 0, tier: 'Bonus only' };
+  const availableTiers = hours <= 6 ? tiers.slice(0, maxTierForSixOrFewerHours) : tiers;
+  for (let index = 0; index < availableTiers.length; index += 1) {
+    const tier = availableTiers[index];
+    const minimum = tierGoal(index, hours, workdays);
+    const nextMinimum = index + 1 < availableTiers.length ? tierGoal(index + 1, hours, workdays) : Infinity;
+    const collection = Math.max(minimum, (targetUsd - giftCard) / tier[2]);
+    if (collection < nextMinimum || index === availableTiers.length - 1) {
+      return { hours, collection, dailyCollection: collection / workdays, tier: tier[0] };
+    }
+  }
+  return null;
+}
+
+function mxnMoney(value) {
+  return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(amount(value));
+}
+
+function updateHoursPlanner(form) {
+  const list = $('hoursRecommendationOptions');
+  if (!list) return;
+  const workdays = goalWorkdays(form);
+  const minTarget = Math.max(0, amount(form.payoutTargetMin.value, defaults.payoutTargetMin));
+  const maxTarget = Math.max(minTarget, amount(form.payoutTargetMax.value, defaults.payoutTargetMax));
+  const mxnRate = Math.max(0.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
+  const giftCard = amount(form.giftCard.value);
+  const buildPlan = (target) => [6, 7, 8]
+    .map((hours) => planForPayout(hours, workdays, target, mxnRate, giftCard))
+    .reduce((best, plan) => !best || plan.collection < best.collection ? plan : best, null);
+  const plans = [minTarget, maxTarget].map((target) => ({ target, plan: buildPlan(target) }));
+  list.replaceChildren(...plans.map(({ target, plan }) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'hours-plan-option';
+    button.dataset.hours = String(plan.hours);
+    button.setAttribute('aria-pressed', String(Number(form.hours.value) === plan.hours));
+    button.setAttribute('aria-label', `${plan.hours} hours per day for ${mxnMoney(target)} MXN. Collect ${money(plan.collection)} USD total, ${money(plan.dailyCollection)} USD per day. Select to apply.`);
+    button.innerHTML = `<div class="plan-heading"><strong>${mxnMoney(target)} MXN</strong><b>${plan.hours} h/day</b></div><span>${money(plan.collection)} total · ${money(plan.dailyCollection)}/day <small>USD</small></span>`;
+    return button;
+  }));
 }
 
 function snapshot() {
@@ -282,7 +330,17 @@ function parseExpression(value) {
   return Math.max(0, terms.reduce((total, term) => total + (Number.parseFloat(term) || 0), 0));
 }
 
-function closeSettings() { $('settingsModal').hidden = true; }
+function closeSettings() {
+  $('settingsModal').hidden = true;
+  $('settingsButton').focus();
+}
+function settingsStatus(message = 'Unsaved changes') { $('settingsStatus').textContent = message; }
+function setSettingsEditor(id, expanded) {
+  $(id).hidden = !expanded;
+  const button = $(id === 'goalFields' ? 'editGoalButton' : 'editWorkdaysButton');
+  button.textContent = expanded ? 'Done' : 'Edit';
+  button.setAttribute('aria-expanded', String(expanded));
+}
 function automaticWorkdays(date = new Date()) {
   let count = 0;
   const days = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
@@ -294,7 +352,7 @@ function automaticWorkdays(date = new Date()) {
 function updateWorkdaysSummary() {
   const automaticCount = automaticWorkdays();
   const count = stagedWorkdaysOverride ?? automaticCount;
-  $('workdaysSummary').textContent = `${count} days · ${stagedWorkdaysOverride === null ? 'automatic' : 'custom'}`;
+  $('workdaysSummary').textContent = `${count} · ${stagedWorkdaysOverride === null ? 'Auto' : 'Custom'}`;
   $('automaticWorkdaysButton').hidden = stagedWorkdaysOverride === null;
 }
 function goalWorkdays(form) {
@@ -312,29 +370,32 @@ function updateGoalOptions(form) {
     option.value = `tier-${index}`;
     option.textContent = `${tier[0]} — ${money(tierGoal(index, hours, workdays))}`;
     return option;
-  }), Object.assign(document.createElement('option'), { value: 'custom', textContent: 'Personal amount' }));
+  }), Object.assign(document.createElement('option'), { value: 'custom', textContent: 'Custom amount' }));
   select.value = [...select.options].some((option) => option.value === selectedValue) ? selectedValue : 'custom';
   const tierIndex = Number(select.value.replace('tier-', ''));
   const isTier = Number.isInteger(tierIndex) && tierIndex >= 0 && tierIndex < tiers.length;
   $('customGoalField').hidden = isTier;
   $('tierGoalHint').hidden = !isTier;
-  if (isTier) $('tierGoalHint').textContent = `${tiers[tierIndex][0]} is ${money(tierGoal(tierIndex, hours, workdays))} for ${hours} hours/day across ${workdays} workdays.`;
+  if (isTier) $('tierGoalHint').textContent = `${hours} h/day × ${workdays} days`;
 }
 function updateGoalSummary(form) {
   const selected = form.goalMode.value;
   const tierIndex = Number(selected.replace('tier-', ''));
   $('goalSummary').textContent = Number.isInteger(tierIndex) && tiers[tierIndex]
     ? `${tiers[tierIndex][0]} · ${money(tierGoal(tierIndex, form.hours.value, goalWorkdays(form)))}`
-    : `Personal amount · ${money(form.goal.value)}`;
+    : `Custom · ${money(form.goal.value)}`;
 }
 function selectedRate(form) {
   if (form.currency.value === 'USD') return 1;
-  if (form.currency.value === 'MXN') return data.rate;
   return amount(form.currencyRate.value, 1);
 }
-function refreshCurrencyFields(form) {
+function refreshCurrencyFields(form, resetRate = false) {
   if (form.currency.value === 'USD') form.currencyRate.value = '1';
-  if (form.currency.value === 'MXN') form.currencyRate.value = amount(data.rate).toFixed(4);
+  if (form.currency.value === 'MXN' && resetRate) form.currencyRate.value = amount(data.rate).toFixed(4);
+  $('exchangeRateField').hidden = form.currency.value === 'USD';
+  form.currencyRate.required = form.currency.value !== 'USD';
+  form.customCurrency.required = form.currency.value === 'CUSTOM';
+  $('exchangeRateCurrency').textContent = form.currency.value === 'CUSTOM' ? form.customCurrency.value.toUpperCase() || 'EUR' : form.currency.value;
   $('customCurrencyFields').hidden = form.currency.value !== 'CUSTOM';
 }
 function openSettings() {
@@ -348,18 +409,46 @@ function openSettings() {
   form.today.value = data.today;
   form.hours.value = data.hours;
   form.giftCard.value = data.giftCard;
+  form.payoutTargetMin.value = data.payoutTargetMin;
+  form.payoutTargetMax.value = data.payoutTargetMax;
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
   form.workdays.required = false;
-  $('workdaysFields').hidden = true;
+  setSettingsEditor('workdaysFields', false);
   form.goalMode.value = data.goalMode === 'tier' ? `tier-${data.goalTier}` : 'custom';
-  $('goalFields').hidden = true;
+  setSettingsEditor('goalFields', false);
   updateWorkdaysSummary();
   updateGoalOptions(form);
   updateGoalSummary(form);
   refreshCurrencyFields(form);
+  updateHoursPlanner(form);
+  settingsStatus('');
   $('settingsModal').hidden = false;
-  $('editGoalButton').focus();
+  selectSettingsTab($('collectionsTab'));
+  $('collectionsTab').focus();
 }
+function selectSettingsTab(selectedTab) {
+  document.querySelectorAll('.settings-tabs [role="tab"]').forEach((tab) => {
+    const selected = tab === selectedTab;
+    tab.setAttribute('aria-selected', String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    $(tab.getAttribute('aria-controls')).hidden = !selected;
+  });
+  document.querySelector('.settings-content').scrollTop = 0;
+}
+document.querySelectorAll('.settings-tabs [role="tab"]').forEach((tab) => {
+  tab.addEventListener('click', () => selectSettingsTab(tab));
+  tab.addEventListener('keydown', (event) => {
+    const tabs = [...document.querySelectorAll('.settings-tabs [role="tab"]')];
+    const index = tabs.indexOf(tab);
+    const next = event.key === 'ArrowRight' ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (index + tabs.length - 1) % tabs.length
+      : event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : null;
+    if (next === null) return;
+    event.preventDefault();
+    selectSettingsTab(tabs[next]);
+    tabs[next].focus();
+  });
+});
 function closeTodayEditor(commit) {
   const editor = $('todayEditor');
   if (editor.style.display !== 'block') return;
@@ -375,15 +464,43 @@ function closeTodayEditor(commit) {
 }
 
 $('settingsButton').addEventListener('click', openSettings);
-$('closeModal').addEventListener('click', closeSettings);
+$('closeModal').addEventListener('click', () => saveSettings($('settingsForm')));
 $('cancelModal').addEventListener('click', closeSettings);
-$('settingsModal').addEventListener('click', (event) => { if (event.target === $('settingsModal')) closeSettings(); });
-$('settingsForm').currency.addEventListener('change', (event) => refreshCurrencyFields(event.currentTarget.form));
+$('settingsForm').addEventListener('input', () => settingsStatus());
+$('settingsForm').addEventListener('change', () => settingsStatus());
+$('settingsForm').customCurrency.addEventListener('input', (event) => {
+  $('exchangeRateCurrency').textContent = event.currentTarget.value.toUpperCase() || 'EUR';
+});
+$('settingsForm').addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    closeSettings();
+  }
+  if (event.key === 'Enter' && event.target.tagName === 'INPUT') {
+    event.preventDefault();
+    saveSettings(event.currentTarget);
+  }
+  if (event.key === 'Tab') {
+    const focusable = [...event.currentTarget.querySelectorAll('button, input, select, [tabindex="0"]')]
+      .filter((element) => !element.disabled && element.tabIndex >= 0 && element.getClientRects().length);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
+});
+$('settingsModal').addEventListener('click', (event) => {
+  if (event.target === $('settingsModal')) saveSettings($('settingsForm'));
+});
+$('settingsForm').currency.addEventListener('change', (event) => {
+  refreshCurrencyFields(event.currentTarget.form, true);
+  updateHoursPlanner(event.currentTarget.form);
+});
 $('editGoalButton').addEventListener('click', () => {
   const form = $('settingsForm');
-  $('goalFields').hidden = false;
+  const expand = $('goalFields').hidden;
+  setSettingsEditor('goalFields', expand);
   updateGoalOptions(form);
-  form.goalMode.focus();
+  if (expand) form.goalMode.focus();
 });
 $('settingsForm').goalMode.addEventListener('change', (event) => {
   updateGoalOptions(event.currentTarget.form);
@@ -393,36 +510,68 @@ $('settingsForm').goal.addEventListener('input', (event) => updateGoalSummary(ev
 $('settingsForm').hours.addEventListener('input', (event) => {
   updateGoalOptions(event.currentTarget.form);
   updateGoalSummary(event.currentTarget.form);
+  updateHoursPlanner(event.currentTarget.form);
+});
+['payoutTargetMin', 'payoutTargetMax', 'giftCard', 'currencyRate'].forEach((field) => {
+  $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
+});
+$('hoursRecommendationOptions').addEventListener('click', (event) => {
+  const option = event.target.closest('[data-hours]');
+  if (!option) return;
+  const form = $('settingsForm');
+  form.hours.value = option.dataset.hours;
+  updateGoalOptions(form);
+  updateGoalSummary(form);
+  updateHoursPlanner(form);
+  settingsStatus('Hours applied');
 });
 $('editWorkdaysButton').addEventListener('click', () => {
   const form = $('settingsForm');
+  if (!$('workdaysFields').hidden) {
+    if (!form.workdays.reportValidity()) return;
+    stagedWorkdaysOverride = goalWorkdays(form);
+    setSettingsEditor('workdaysFields', false);
+    updateWorkdaysSummary();
+    settingsStatus();
+    return;
+  }
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
-  $('workdaysFields').hidden = false;
+  setSettingsEditor('workdaysFields', true);
   $('automaticWorkdaysButton').hidden = false;
   form.workdays.required = true;
   updateGoalOptions(form);
   updateGoalSummary(form);
+  updateHoursPlanner(form);
   form.workdays.focus();
 });
 $('settingsForm').workdays.addEventListener('input', (event) => {
   const form = event.currentTarget.form;
   const count = clamp(Math.round(amount(event.currentTarget.value)), 1, 31);
-  $('workdaysSummary').textContent = `${count} days · custom`;
+  $('workdaysSummary').textContent = `${count} · Custom`;
   updateGoalOptions(form);
   updateGoalSummary(form);
+  updateHoursPlanner(form);
 });
 $('automaticWorkdaysButton').addEventListener('click', () => {
   const form = $('settingsForm');
   stagedWorkdaysOverride = null;
-  $('workdaysFields').hidden = true;
+  setSettingsEditor('workdaysFields', false);
   form.workdays.required = false;
   updateWorkdaysSummary();
   updateGoalOptions(form);
   updateGoalSummary(form);
+  updateHoursPlanner(form);
+  settingsStatus();
 });
-$('settingsForm').addEventListener('submit', (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
+function saveSettings(form) {
+  const invalid = [...form.elements].find((element) => element.willValidate && !element.validity.valid);
+  if (invalid) {
+    const panel = invalid.closest('[role="tabpanel"]');
+    if (panel) selectSettingsTab($(panel.getAttribute('aria-labelledby')));
+    settingsStatus('Check the highlighted field');
+    invalid.reportValidity();
+    return;
+  }
   const currencyRate = selectedRate(form);
   data.currency = form.currency.value;
   data.customCurrency = /^[A-Za-z]{3}$/.test(form.customCurrency.value) ? form.customCurrency.value.toUpperCase() : defaults.customCurrency;
@@ -437,8 +586,10 @@ $('settingsForm').addEventListener('submit', (event) => {
   data.goal = goalUsesTier ? tierGoal(selectedGoalTier, form.hours.value, submittedWorkdays) : amount(form.goal.value);
   data.before = amount(form.before.value);
   data.today = amount(form.today.value);
-  data.hours = Math.max(.1, amount(form.hours.value, defaults.hours));
+  data.hours = Math.min(8, Math.max(.1, amount(form.hours.value, defaults.hours)));
   data.giftCard = amount(form.giftCard.value);
+  data.payoutTargetMin = Math.max(0, amount(form.payoutTargetMin.value, defaults.payoutTargetMin));
+  data.payoutTargetMax = Math.max(data.payoutTargetMin, amount(form.payoutTargetMax.value, defaults.payoutTargetMax));
   if (!$('workdaysFields').hidden) stagedWorkdaysOverride = submittedWorkdays;
   data.workdaysOverride = stagedWorkdaysOverride;
   data.workdaysOverrideMonth = stagedWorkdaysOverride === null ? '' : monthKey(new Date());
@@ -448,15 +599,20 @@ $('settingsForm').addEventListener('submit', (event) => {
   closeSettings();
   stagedWorkdaysOverride = null;
   render();
+}
+
+$('settingsForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveSettings(event.currentTarget);
 });
 $('todayButton').addEventListener('click', () => {
   const editor = $('todayEditor');
   stagedToday = data.today;
   $('todayButton').style.display = 'none';
   editor.style.display = 'block';
-  editor.value = data.today;
+  editor.value = `${data.today}+`;
   editor.focus();
-  editor.select();
+  editor.setSelectionRange(editor.value.length, editor.value.length);
 });
 $('todayEditor').addEventListener('keydown', (event) => {
   if (event.key === 'Enter') { event.preventDefault(); closeTodayEditor(true); }

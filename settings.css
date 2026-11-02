@@ -1,4 +1,51 @@
-.modal select{display:block;width:100%;margin-top:6px;padding:9px 34px 9px 10px;border:1px solid rgba(120,120,128,.2);border-radius:8px;background:rgba(255,255,255,.66);box-shadow:inset 0 1px 2px rgba(30,40,60,.035);color:#1d1d1f;font:400 15px -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif;appearance:auto}.modal select:focus{outline:3px solid rgba(0,122,255,.15);border-color:#007aff}
-.pill.behind-track{background:rgba(255,59,48,.14);color:#d70015}.pill.close-track{background:rgba(255,204,0,.2);color:#9a6700}.pill.on-track{background:rgba(52,199,89,.14);color:#248a43}.pill.ahead-track{border:1px solid rgba(170,113,0,.24);background:linear-gradient(135deg,#fff8d1 0%,#ffe183 38%,#dca328 100%);box-shadow:inset 0 1px rgba(255,255,255,.72),0 1px 3px rgba(191,130,20,.22);color:#704700;text-shadow:0 1px rgba(255,255,255,.35)}
-.modal{max-height:calc(100vh - 32px);overflow-y:auto;overscroll-behavior:contain}@supports(height:100dvh){.modal{max-height:calc(100dvh - 32px)}}.goal-setting,.workdays-setting{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:13px 0;padding:11px 12px;border:1px solid rgba(120,120,128,.16);border-radius:10px;background:rgba(255,255,255,.45)}.goal-setting>div,.workdays-setting>div{display:grid;gap:4px}.goal-setting span,.workdays-setting span{color:rgba(60,60,67,.82);font-size:12px}.goal-setting strong,.workdays-setting strong{color:rgba(60,60,67,.58);font-size:12px;font-weight:500}.goal-setting .secondary-button,.workdays-setting .secondary-button{min-height:30px;padding:5px 12px}.tier-goal-hint{margin:-4px 0 10px;color:rgba(60,60,67,.58);font-size:12px;line-height:1.4}.automatic-workdays-button{margin:0 0 10px}
-.modal .gift-card-field{margin-top:22px;padding-top:15px;border-top:1px solid rgba(60,60,67,.12)}.modal .gift-card-field span{display:block;margin-top:6px;color:rgba(60,60,67,.58);font-size:11px;line-height:1.35}
+.pill.behind-track{background:rgba(255,59,48,.14);color:#d70015}
+.pill.close-track{background:rgba(255,204,0,.2);color:#9a6700}
+.pill.on-track{background:rgba(52,199,89,.14);color:#248a43}
+.pill.ahead-track{border:1px solid rgba(170,113,0,.24);background:linear-gradient(135deg,#fff8d1 0%,#ffe183 38%,#dca328 100%);color:#704700}
+.modal-backdrop{padding:16px}
+.modal{width:min(740px,100%);max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);padding:22px;display:flex;flex-direction:column;gap:18px;overflow:hidden}
+.modal [hidden]{display:none!important}
+.modal-head{flex:none;gap:16px}
+.settings-unit{margin:0;color:rgba(60,60,67,.55);font-size:11px;letter-spacing:.04em}
+.settings-label-note{float:right;color:rgba(60,60,67,.5);font-size:11px}
+.settings-target{min-width:0;margin:0;padding:0;border:0}
+.settings-target legend{margin-bottom:7px;padding:0;font-size:12px;color:rgba(60,60,67,.82)}
+.settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:10px;background:rgba(120,120,128,.09);flex:none}
+.settings-tabs button{min-width:0;padding:8px 6px;border:0;border-radius:7px;background:transparent;color:rgba(60,60,67,.68);font:500 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}
+.settings-tabs button[aria-selected="true"]{background:#fff;color:#1d1d1f;box-shadow:0 1px 4px rgba(23,30,44,.1)}
+.settings-tabs button:focus-visible,.hours-plan-option:focus-visible{outline:2px solid #007aff;outline-offset:2px}
+.settings-content{min-height:0;overflow:auto;padding:2px}
+.settings-tab-panel{display:grid;gap:16px;min-height:305px;align-content:start}
+.settings-columns{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:24px;align-items:start}
+.settings-column{display:grid;gap:10px;min-width:0;align-content:start}
+.settings-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.modal label{min-width:0;margin:0;font-size:12px;line-height:1.35}
+.modal input,.modal select{display:block;width:100%;min-width:0;height:34px;margin-top:4px;padding:6px 9px;border:1px solid rgba(120,120,128,.2);border-radius:8px;background:rgba(255,255,255,.66);color:#1d1d1f;font:400 14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.modal select:focus{outline:3px solid rgba(0,122,255,.15);border-color:#007aff}
+.goal-setting,.workdays-setting{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 10px;border:1px solid rgba(120,120,128,.16);border-radius:10px;background:rgba(255,255,255,.45)}
+.goal-setting>div,.workdays-setting>div{display:grid;gap:3px;min-width:0}
+.goal-setting span,.workdays-setting span{font-size:12px;color:rgba(60,60,67,.82)}
+.goal-setting strong,.workdays-setting strong{font-size:12px;font-weight:500;overflow-wrap:anywhere;color:rgba(60,60,67,.65)}
+.goal-setting button,.workdays-setting button{flex:none;min-height:28px;padding:4px 10px;font-size:13px}
+#goalFields,#workdaysFields{display:grid;gap:8px}
+.tier-goal-hint{margin:0;font-size:11px;line-height:1.35;color:rgba(60,60,67,.65)}
+.automatic-workdays-button{justify-self:start;min-height:28px;font-size:12px}
+.hours-planner{display:grid;gap:8px;margin:0;padding-top:4px}
+.hours-planner h4{margin:0;font-size:12px;font-weight:600;color:rgba(60,60,67,.8)}
+#hoursRecommendationOptions{display:grid;gap:7px}
+.hours-plan-option{display:grid;gap:4px;min-width:0;width:100%;padding:9px 10px;border:1px solid rgba(120,120,128,.16);border-radius:8px;background:rgba(255,255,255,.6);color:#1d1d1f;text-align:left;cursor:pointer;overflow-wrap:anywhere}
+.hours-plan-option[aria-pressed="true"]{border-color:rgba(0,122,255,.5);background:rgba(0,122,255,.05)}
+.hours-plan-option[aria-pressed="true"] .plan-heading b:before{content:'✓ ';}
+.hours-plan-option:hover{border-color:#007aff}
+.hours-plan-option strong{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.hours-plan-option span{font-size:11px;line-height:1.4;color:rgba(60,60,67,.65)}
+.plan-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.plan-heading b{color:#007aff;font-size:12px;font-weight:600;white-space:nowrap}
+.hours-plan-option small{font-size:10px;color:rgba(60,60,67,.5)}
+.modal .gift-card-field{margin-top:4px;padding-top:16px;border-top:1px solid rgba(60,60,67,.12)}
+.gift-card-field input{max-width:220px}
+.modal-actions{flex:none;align-items:center;margin:0;padding-top:14px;border-top:1px solid rgba(60,60,67,.12)}
+#settingsStatus{margin-right:auto;font-size:11px;color:rgba(60,60,67,.65)}
+.modal input:invalid{border-color:rgba(215,0,21,.5)}
+@media(max-height:600px){.modal{padding:16px;gap:12px}.settings-tab-panel{min-height:0;gap:12px}.modal h2{font-size:20px}}
+@media(max-width:560px){.modal{padding:16px;gap:14px}.settings-columns{grid-template-columns:1fr;gap:16px}.settings-tab-panel{min-height:0}}

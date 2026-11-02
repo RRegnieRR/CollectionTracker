@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
   <link rel="stylesheet" href="styles.css?v=tiers-cap-simple" />
-  <link rel="stylesheet" href="settings.css?v=settings-gift-card" />
+  <link rel="stylesheet" href="settings.css?v=settings-intuitive" />
 </head>
 <body>
   <main class="shell">
@@ -49,23 +49,51 @@
   </main>
 
   <div class="modal-backdrop" id="settingsModal" hidden>
-    <form class="modal" id="settingsForm">
-      <div class="modal-head"><div><p class="eyebrow">WORKSPACE SETTINGS</p><h2>Goal settings</h2></div><button class="close-button" id="closeModal" type="button" aria-label="Close">×</button></div>
-      <p class="modal-subtitle">Today's collection is tracked separately from your previous total.</p>
-      <label>Estimated payout currency<select name="currency"><option value="USD">US Dollar (USD)</option><option value="MXN">Mexican Peso (MXN)</option><option value="CUSTOM">Other currency</option></select></label>
-      <div id="customCurrencyFields" hidden><label>Currency code<input name="customCurrency" type="text" maxlength="3" placeholder="EUR" autocomplete="off" /></label></div>
-      <label>Exchange rate (1 USD equals)<input name="currencyRate" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <div class="goal-setting"><div><span>Monthly goal</span><strong id="goalSummary">Personal amount · $0.00</strong></div><button class="secondary-button" id="editGoalButton" type="button">Edit</button></div>
-      <div id="goalFields" hidden><label>Goal target<select name="goalMode" aria-label="Monthly goal target"></select></label><p class="tier-goal-hint" id="tierGoalHint" hidden></p><label id="customGoalField">Personal monthly goal<input name="goal" type="text" inputmode="decimal" autocomplete="off" /></label></div>
-      <label>Collected before today<input name="before" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Collected today<input name="today" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <label>Hours worked per day<input name="hours" type="text" inputmode="decimal" autocomplete="off" /></label>
-      <div class="workdays-setting"><div><span>Workdays this month</span><strong id="workdaysSummary">20 days · automatic</strong></div><button class="secondary-button" id="editWorkdaysButton" type="button">Edit</button></div>
-      <div id="workdaysFields" hidden><label>Workdays this month<input name="workdays" type="number" min="1" max="31" step="1" inputmode="numeric" /></label><button class="secondary-button automatic-workdays-button" id="automaticWorkdaysButton" type="button" hidden>Use automatic count</button></div>
-      <label class="gift-card-field">Gift card / bonus (USD)<input name="giftCard" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" /><span>Added to your estimated payout and converted to the selected payout currency.</span></label>
-      <div class="modal-actions"><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save changes</button></div>
+    <form class="modal" id="settingsForm" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" novalidate>
+      <div class="modal-head"><h2 id="settingsTitle">Settings</h2><button class="close-button" id="closeModal" type="button" aria-label="Save and close">×</button></div>
+      <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+        <button id="collectionsTab" type="button" role="tab" aria-controls="collectionsSettings" aria-selected="true" tabindex="0">Collections</button>
+        <button id="scheduleTab" type="button" role="tab" aria-controls="scheduleSettings" aria-selected="false" tabindex="-1">Hours &amp; plan</button>
+        <button id="payoutTab" type="button" role="tab" aria-controls="payoutSettings" aria-selected="false" tabindex="-1">Payout</button>
+      </div>
+      <div class="settings-content">
+      <section id="collectionsSettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="collectionsTab">
+      <p class="settings-unit">USD</p>
+      <div class="goal-setting"><div><span>Monthly goal</span><strong id="goalSummary">Custom · $0.00</strong></div><button class="secondary-button" id="editGoalButton" type="button" aria-expanded="false" aria-controls="goalFields">Edit</button></div>
+      <div id="goalFields" hidden><label>Goal<select name="goalMode" aria-label="Monthly goal target"></select></label><p class="tier-goal-hint" id="tierGoalHint" hidden></p><label id="customGoalField">Amount<input name="goal" type="text" inputmode="decimal" autocomplete="off" /></label></div>
+      <div class="settings-pair"><label>Before today<input name="before" type="text" inputmode="decimal" autocomplete="off" /></label>
+      <label>Today<input name="today" type="text" inputmode="decimal" autocomplete="off" /></label>
+      </div>
+      </section>
+      <section id="scheduleSettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="scheduleTab" hidden>
+      <div class="settings-columns">
+      <div class="settings-column">
+      <label>Hours / day <span class="settings-label-note">max 8</span><input name="hours" type="number" min="0.1" max="8" step="0.1" required inputmode="decimal" autocomplete="off" /></label>
+      <div class="workdays-setting"><div><span>Workdays</span><strong id="workdaysSummary">20 · Auto</strong></div><button class="secondary-button" id="editWorkdaysButton" type="button" aria-expanded="false" aria-controls="workdaysFields">Edit</button></div>
+      <div id="workdaysFields" hidden><label>Days this month<input name="workdays" type="number" min="1" max="31" step="1" inputmode="numeric" /></label><button class="secondary-button automatic-workdays-button" id="automaticWorkdaysButton" type="button" hidden>Use auto</button></div>
+      </div>
+      <div class="settings-column">
+      <fieldset class="settings-target"><legend>Payout target · MXN</legend><div class="settings-pair">
+      <label>From<input name="payoutTargetMin" type="text" inputmode="decimal" autocomplete="off" /></label>
+      <label>To<input name="payoutTargetMax" type="text" inputmode="decimal" autocomplete="off" /></label>
+      </div>
+      </fieldset>
+      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Recommended</h4><div id="hoursRecommendationOptions"></div></section>
+      </div>
+      </div>
+      </section>
+      <section id="payoutSettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="payoutTab" hidden>
+      <div class="settings-pair">
+      <label>Currency<select name="currency"><option value="USD">USD · Dollar</option><option value="MXN">MXN · Peso</option><option value="CUSTOM">Other</option></select></label>
+      <label id="exchangeRateField">1 USD = <span id="exchangeRateCurrency">USD</span><input name="currencyRate" type="number" min="0.0001" step="any" required inputmode="decimal" autocomplete="off" /></label>
+      </div>
+      <div id="customCurrencyFields" hidden><label>Currency code<input name="customCurrency" type="text" maxlength="3" pattern="[A-Za-z]{3}" placeholder="EUR" autocomplete="off" /></label></div>
+      <label class="gift-card-field" title="Added to your estimated payout and converted to the selected currency.">Gift card / bonus · USD<input name="giftCard" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" /></label>
+      </section>
+      </div>
+      <div class="modal-actions"><span id="settingsStatus" role="status" aria-live="polite"></span><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save</button></div>
     </form>
   </div>
-  <script src="app.js?v=gift-card-bonus"></script>
+  <script src="app.js?v=quick-add-collections"></script>
 </body>
 </html>
