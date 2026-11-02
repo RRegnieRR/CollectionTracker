@@ -1,5 +1,5 @@
 const KEY = 'collection-tracker-web-v1';
-const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, giftCard: 0, payoutTargetMin: 30000, payoutTargetMax: 40000, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
+const defaults = { goal: 0, goalMode: 'custom', goalTier: null, before: 0, today: 0, hours: 6, rate: 18, currency: 'USD', customCurrency: 'EUR', currencyRate: 1, giftCard: 0, payoutTarget: 40000, workdaysOverride: null, workdaysOverrideMonth: '', month: '', day: '', webInitialised: false };
 const tiers = [
   ['Level 1', 133, .0635], ['Level 2', 158, .0685], ['Level 3', 183, .0735], ['Level 4', 208, .0785], ['Level 5', 233, .0835],
   ['Level 6', 258, .0885], ['Level 7', 283, .0935], ['Level 8', 308, .0985], ['Level 9', 333, .1035], ['Level 10', 358, .1085]
@@ -34,8 +34,6 @@ function readData() {
 function normalise(values) {
   const currency = ['USD', 'MXN', 'CUSTOM'].includes(String(values.currency || 'USD').toUpperCase()) ? String(values.currency || 'USD').toUpperCase() : 'USD';
   const savedGoalTier = Number(values.goalTier);
-  const payoutTargetMin = Math.max(0, amount(values.payoutTargetMin, defaults.payoutTargetMin));
-  const payoutTargetMax = Math.max(payoutTargetMin, amount(values.payoutTargetMax, defaults.payoutTargetMax));
   const hasValidGoalTier = values.goalMode === 'tier' && values.goalTier !== null && values.goalTier !== '' && Number.isInteger(savedGoalTier) && savedGoalTier >= 0 && savedGoalTier < tiers.length;
   return {
     ...defaults,
@@ -51,14 +49,14 @@ function normalise(values) {
     customCurrency: /^[A-Za-z]{3}$/.test(String(values.customCurrency || '')) ? String(values.customCurrency).toUpperCase() : defaults.customCurrency,
     currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1)),
     giftCard: amount(values.giftCard),
-    payoutTargetMin,
-    payoutTargetMax,
+    payoutTarget: Math.max(1, amount(values.payoutTarget ?? values.payoutTargetMax ?? defaults.payoutTarget)),
     workdaysOverride: values.workdaysOverride == null ? null : Math.max(1, Math.min(31, Math.round(amount(values.workdaysOverride)))),
     workdaysOverrideMonth: /^\d{4}-\d{1,2}$/.test(String(values.workdaysOverrideMonth || '')) ? String(values.workdaysOverrideMonth) : ''
   };
 }
 
-let data = normalise({ ...defaults, ...readData() });
+const savedData = readData();
+let data = normalise({ ...defaults, ...savedData, payoutTarget: savedData.payoutTarget ?? savedData.payoutTargetMax ?? defaults.payoutTarget });
 let stagedToday = null;
 let stagedWorkdaysOverride = null;
 let visibleTierCount = 5;
@@ -204,29 +202,16 @@ function workdayCounts(date, now = new Date(), override = null) {
   return { workdays: override ?? total, remainingDays: override === null ? remaining : Math.max(0, override - elapsedBeforeToday) };
 }
 
-function recommendPayoutRange(minTarget, maxTarget, period, mxnRate, giftCard, collected = 0) {
+function recommendHours(target, period, mxnRate, giftCard, collected = 0) {
   const candidates = [6, 7, 8].map((hours) => {
-    const lower = planForPayout(hours, period.workdays, minTarget, mxnRate, giftCard);
-    const upper = planForPayout(hours, period.workdays, maxTarget, mxnRate, giftCard);
-    const minimumMore = Math.max(0, lower.collection - collected);
+    const upper = planForPayout(hours, period.workdays, target, mxnRate, giftCard);
     const more = Math.max(0, upper.collection - collected);
     const daily = (amountLeft) => amountLeft === 0 ? 0 : period.remainingDays ? Math.ceil(amountLeft / period.remainingDays * 100) / 100 : null;
     const reference = Math.max(collected, upper.collection);
     const projected = payoutAtCollection(hours, period.workdays, reference, mxnRate, giftCard);
-    return { hours, minTarget, maxTarget, minimumMore, more, minimumDaily: daily(minimumMore), daily: daily(more), collection: upper.collection, projectedPayout: projected.payout };
+    return { hours, target, more, daily: daily(more), collection: upper.collection, projectedPayout: projected.payout };
   });
   return candidates.reduce((best, plan) => !best || plan.more < best.more || (plan.more === best.more && plan.projectedPayout > best.projectedPayout) ? plan : best, null);
-}
-
-function setupPlannerBands(form) {
-  const upper = clamp(Math.ceil(amount(form.payoutTargetMax.value, 40000) / 5000) * 5000, 20000, 100000);
-  form.plannerBand.replaceChildren(...Array.from({ length: 17 }, (_, index) => {
-    const max = 20000 + index * 5000;
-    return Object.assign(document.createElement('option'), { value: String(max), textContent: `${mxnMoney(max - 5000)}–${mxnMoney(max)} MXN` });
-  }));
-  form.plannerBand.value = String(upper);
-  form.payoutTargetMin.value = upper - 5000;
-  form.payoutTargetMax.value = upper;
 }
 
 function mxnMoney(value) {
@@ -272,20 +257,25 @@ function updateHoursPlanner(form) {
   $('plannerWorkdays').textContent = period.current ? `${remainingDays} days left · ${workdays} this month` : `${workdays} workdays`;
   $('plannerPeriodNote').textContent = period.current ? 'Uses your collections so far.' : 'Plan next month’s declaration.';
   $('plannerThisMonth').hidden = period.current;
-  const minTarget = Math.max(0, amount(form.payoutTargetMin.value, defaults.payoutTargetMin));
-  const maxTarget = Math.max(minTarget, amount(form.payoutTargetMax.value, defaults.payoutTargetMax));
+  const target = amount(form.payoutTarget.value);
+  if (!target) {
+    list.replaceChildren();
+    $('plannerComparison').innerHTML = '';
+    $('plannerCompareCaption').textContent = '';
+    $('plannerGrowth').textContent = 'Enter your payout target.';
+    return;
+  }
   const mxnRate = Math.max(0.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
   const giftCard = amount(form.giftCard.value);
   const collected = period.current ? amount(form.before.value) + amount(form.today.value) : 0;
-  list.replaceChildren(...[[minTarget, maxTarget]].map(([min, max]) => {
-    const plan = recommendPayoutRange(min, max, period, mxnRate, giftCard, collected);
+  list.replaceChildren(...[target].map((target) => {
+    const plan = recommendHours(target, period, mxnRate, giftCard, collected);
     const button = document.createElement('article');
     button.className = 'hours-plan-option';
-    const pace = plan.more === 0 ? 'Target reached' : plan.daily === null ? 'No workdays left' : `${money(plan.minimumDaily)}–${money(plan.daily)}/day USD`;
-    const range = `${mxnMoney(min)}–${mxnMoney(max)} MXN`;
-    button.title = `${money(plan.minimumMore)}–${money(plan.more)} USD still to collect. Hours are chosen for the upper target; tier jumps may exceed it. ${plan.hours * 5} hours/week.`;
-    button.setAttribute('aria-label', `${range}: ${plan.hours} hours per day, ${plan.hours * 5} hours per week. ${pace}. ${button.title}`);
-    button.innerHTML = `<div class="plan-heading"><strong>Least collection</strong><b>${plan.hours} h/day</b></div><span>${money(plan.more)} USD ${period.current ? 'more' : 'total'} · ${pace}</span>`;
+    const pace = plan.more === 0 ? 'Target reached' : plan.daily === null ? 'No workdays left' : `${money(plan.daily)}/workday`;
+    button.title = `${plan.hours * 5} hours/week. Least additional collection needed for ${mxnMoney(target)} MXN.`;
+    button.setAttribute('aria-label', `${plan.hours} hours per day to earn ${mxnMoney(target)} MXN. ${money(plan.more)} USD still to collect. ${pace}.`);
+    button.innerHTML = `<div class="plan-heading"><strong>${plan.hours}<small> hours/day</small></strong><b>${plan.hours * 5}h/week</b></div><span>Collect ${money(plan.more)} USD ${period.current ? 'more' : 'total'}</span><span>${pace}</span>`;
     const reference = Math.max(collected, plan.collection);
     $('plannerCompareCaption').textContent = `At ${money(reference)} USD collected`;
     $('plannerComparison').innerHTML = [6, 7, 8].map((hours) => {
@@ -294,8 +284,8 @@ function updateHoursPlanner(form) {
     }).join('');
     const growth = plan.hours === 6 ? growthAlternative(workdays, reference, mxnRate, giftCard) : null;
     $('plannerGrowth').textContent = growth
-      ? `More room to earn: ${growth.hours} h/day reaches ${growth.tier} at ${money(growth.collection)} USD. That pays ${mxnMoney(growth.payout)} MXN—${mxnMoney(growth.gain)} more than 6h at the same collection.`
-      : `${plan.hours} h/day ${plan.hours > 6 ? 'avoids the Level 3 cap.' : 'needs less collection for this target.'}`;
+      ? `To grow: ${growth.hours}h/day unlocks ${growth.tier} at ${money(growth.collection)} USD → ${mxnMoney(growth.payout)} MXN.`
+      : plan.hours > 6 ? 'Earn beyond the Level 3 cap.' : '6h/day is capped at Level 3.';
     return button;
   }));
 }
@@ -351,24 +341,23 @@ function render() {
   $('monthLabel').textContent = view.now.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   $('dailyAmount').textContent = money(view.daily);
   $('goalAmount').textContent = money(data.goal);
-  $('nextTierAmount').textContent = money(view.next);
   $('daysLeft').textContent = view.remainingDays;
   $('payoutAmount').textContent = payoutMoney(view.collected * view.tier[2] + data.giftCard);
   $('todayLabel').textContent = view.workday ? 'Today' : `${view.now.toLocaleDateString('en-US', { weekday: 'long' })} bonus`;
   $('progressText').textContent = view.workday ? `${money(view.today)} of ${money(view.daily)}` : `${money(view.today)} extra`;
   setProgress('progressFill', view.todayProgress);
-  $('todayButton').innerHTML = view.workday ? `${money(view.todayLeft)} remaining today <span>↗</span>` : 'No workday target today — add a bonus <span>↗</span>';
+  $('todayButton').textContent = view.workday ? `+ Add collection · ${money(view.todayLeft)} left today` : '+ Add collection';
   $('collectedSummary').textContent = `${money(view.collected)} collected`;
   $('monthProgressPercent').textContent = `${data.goal ? Math.round(clamp(view.collected / data.goal * 100, 0, 100)) : 0}% of goal`;
-  $('monthRemaining').textContent = `${money(view.monthLeft)} remaining`;
+  $('monthRemaining').textContent = `${money(view.monthLeft)} left`;
   setProgress('monthProgressFill', data.goal ? view.collected / data.goal * 100 : 0);
   const status = trackStatus(view);
   $('ratePill').textContent = status.label;
   $('ratePill').className = `pill ${status.className}`;
-  $('currentTier').textContent = `${view.tier[0]} rate`;
+  $('currentTier').textContent = view.tier[0];
   $('tierRate').textContent = `${(view.tier[2] * 100).toFixed(2)}%`;
   setProgress('tierProgressFill', view.next ? view.collected / (view.collected + view.next) * 100 : 100);
-  $('tierCopy').textContent = view.next ? `${money(view.next)} more in collections to reach the next commission tier.` : 'You are at the highest available commission tier.';
+  $('tierCopy').textContent = view.next ? `${money(view.next)} to the next level` : data.hours <= 6 ? 'Level 3 cap · 6h/day or less' : 'Highest level reached';
   renderPayoutTiers(view);
 }
 
@@ -390,12 +379,12 @@ function renderPayoutTiers(view) {
     const level = document.createElement('strong');
     level.textContent = name;
     const minimum = document.createElement('span');
-    minimum.textContent = `${money(minimumCollection)} collection minimum`;
+    minimum.textContent = `${money(minimumCollection)} USD collected`;
     details.append(level, minimum);
     if (levelThreeCap && levelNumber === maxTierForSixOrFewerHours) {
       const cap = document.createElement('span');
       cap.className = 'tier-cap-label';
-      cap.textContent = 'Maximum at 6 or fewer hours/day';
+      cap.textContent = 'Your schedule’s limit';
       details.append(cap);
     }
 
@@ -415,9 +404,9 @@ function renderPayoutTiers(view) {
     ? 'Level 3 cap'
     : `${tiers.length} levels`;
   $('payoutTiersCopy').textContent = levelThreeCap
-    ? 'Maximum commission level at 6 or fewer hours per day.'
-    : 'All 10 levels are available above 6 hours per day.';
-  $('tierListToggle').textContent = expanded ? '− Show only the first 5 levels' : 'Add 5 more levels +';
+    ? '6h/day or less: commission stops at Level 3.'
+    : 'All 10 levels available.';
+  $('tierListToggle').textContent = expanded ? 'Show fewer' : 'Show all 10 levels';
   $('tierListToggle').setAttribute('aria-expanded', String(expanded));
 }
 
@@ -505,9 +494,7 @@ function openSettings() {
   form.today.value = data.today;
   form.hours.value = data.hours;
   form.giftCard.value = data.giftCard;
-  form.payoutTargetMin.value = data.payoutTargetMin;
-  form.payoutTargetMax.value = data.payoutTargetMax;
-  setupPlannerBands(form);
+  form.payoutTarget.value = data.payoutTarget;
   form.workdays.value = stagedWorkdaysOverride ?? automaticWorkdays();
   form.workdays.required = false;
   setSettingsEditor('workdaysFields', false);
@@ -562,6 +549,11 @@ function closeTodayEditor(commit) {
 }
 
 $('settingsButton').addEventListener('click', openSettings);
+$('planHoursButton').addEventListener('click', () => {
+  openSettings();
+  selectSettingsTab($('scheduleTab'));
+  $('scheduleTab').focus();
+});
 $('closeModal').addEventListener('click', () => saveSettings($('settingsForm')));
 $('cancelModal').addEventListener('click', closeSettings);
 const markSettingsChanged = (event) => {
@@ -616,18 +608,12 @@ $('settingsForm').hours.addEventListener('input', (event) => {
 ['plannerMonth', 'plannerYear'].forEach((field) => {
   $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
 });
-$('settingsForm').plannerBand.addEventListener('change', (event) => {
-  const form = event.currentTarget.form;
-  form.payoutTargetMax.value = Number(event.currentTarget.value);
-  form.payoutTargetMin.value = Number(event.currentTarget.value) - 5000;
-  updateHoursPlanner(form);
-});
 $('plannerThisMonth').addEventListener('click', () => {
   const form = $('settingsForm');
   resetPlannerPeriod(form, false);
   updateHoursPlanner(form);
 });
-['payoutTargetMin', 'payoutTargetMax', 'giftCard', 'currencyRate', 'before', 'today'].forEach((field) => {
+['payoutTarget', 'giftCard', 'currencyRate', 'before', 'today'].forEach((field) => {
   $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
 });
 $('editWorkdaysButton').addEventListener('click', () => {
@@ -693,8 +679,9 @@ function saveSettings(form) {
   data.today = amount(form.today.value);
   data.hours = Math.min(8, Math.max(.1, amount(form.hours.value, defaults.hours)));
   data.giftCard = amount(form.giftCard.value);
-  data.payoutTargetMin = Math.max(0, amount(form.payoutTargetMin.value, defaults.payoutTargetMin));
-  data.payoutTargetMax = Math.max(data.payoutTargetMin, amount(form.payoutTargetMax.value, defaults.payoutTargetMax));
+  data.payoutTarget = amount(form.payoutTarget.value, defaults.payoutTarget);
+  delete data.payoutTargetMin;
+  delete data.payoutTargetMax;
   if (!$('workdaysFields').hidden) stagedWorkdaysOverride = submittedWorkdays;
   data.workdaysOverride = stagedWorkdaysOverride;
   data.workdaysOverrideMonth = stagedWorkdaysOverride === null ? '' : monthKey(new Date());

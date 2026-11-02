@@ -77,7 +77,7 @@ test('a future forecast ignores the current custom workday override', () => {
 test('future recommendations are previews and do not change the active schedule', () => {
   const { context, node } = loadApp();
   const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
-    payoutTargetMin: { value: '30000' }, payoutTargetMax: { value: '40000' },
+    payoutTarget: { value: '40000' },
     currency: { value: 'MXN' }, currencyRate: { value: '18' }, giftCard: { value: '0' }, hours: { value: '8' } };
   const before = vm.runInContext('JSON.stringify(data)', context);
   context.updateHoursPlanner(form);
@@ -91,12 +91,12 @@ test('future recommendations are previews and do not change the active schedule'
   assert.equal(vm.runInContext('JSON.stringify(data)', context), before);
 });
 
-test('payout bands choose the least collection for their upper target', () => {
+test('single payout targets choose the least collection needed', () => {
   const { context } = loadApp();
   const december = { workdays: 21, remainingDays: 21 };
-  const low = context.recommendPayoutRange(20000, 30000, december, 18, 0);
-  const middle = context.recommendPayoutRange(30000, 40000, december, 18, 0);
-  const high = context.recommendPayoutRange(40000, 50000, december, 18, 0);
+  const low = context.recommendHours(30000, december, 18, 0);
+  const middle = context.recommendHours(40000, december, 18, 0);
+  const high = context.recommendHours(50000, december, 18, 0);
   assert.equal(low.hours, 6);
   assert.equal(low.collection, 23058);
   assert.equal(middle.hours, 6);
@@ -104,7 +104,7 @@ test('payout bands choose the least collection for their upper target', () => {
   assert.equal(high.hours, 7);
   assert.equal(high.collection, 34251);
   assert.ok(high.collection * .0835 * 18 >= 50000);
-  const november = context.recommendPayoutRange(30000, 40000, { workdays: 19, remainingDays: 19 }, 18, 0);
+  const november = context.recommendHours(40000, { workdays: 19, remainingDays: 19 }, 18, 0);
   assert.equal(november.hours, 7);
   assert.ok(november.collection < middle.collection);
 });
@@ -112,13 +112,13 @@ test('payout bands choose the least collection for their upper target', () => {
 test('remaining pace subtracts collections and uses the days still available', () => {
   const { context } = loadApp();
   const period = { workdays: 21, remainingDays: 5 };
-  const plan = context.recommendPayoutRange(30000, 40000, period, 18, 0, 20000);
+  const plan = context.recommendHours(40000, period, 18, 0, 20000);
   assert.equal(plan.more, 10234.32);
   assert.equal(plan.daily, 2046.87);
-  const achieved = context.recommendPayoutRange(30000, 40000, period, 18, 0, 40000);
+  const achieved = context.recommendHours(40000, period, 18, 0, 40000);
   assert.equal(achieved.more, 0);
   assert.equal(achieved.daily, 0);
-  const closed = context.recommendPayoutRange(30000, 40000, { ...period, remainingDays: 0 }, 18, 0);
+  const closed = context.recommendHours(40000, { ...period, remainingDays: 0 }, 18, 0);
   assert.equal(closed.daily, null);
 });
 
@@ -137,7 +137,7 @@ test('low targets can use base commission and a bonus can cover the target', () 
   const base = context.planForPayout(6, 21, 1000, 18, 0);
   assert.equal(base.tier, 'Base');
   assert.ok(base.collection * .0535 * 18 >= 1000);
-  const covered = context.recommendPayoutRange(20000, 30000, { workdays: 21, remainingDays: 21 }, 18, 2000);
+  const covered = context.recommendHours(30000, { workdays: 21, remainingDays: 21 }, 18, 2000);
   assert.equal(covered.more, 0);
   assert.equal(covered.hours, 6);
 });
@@ -167,19 +167,23 @@ test('growth suggestion identifies extra collection and compares payouts at equa
 
 test('when collection targets tie, favor the schedule that pays more at that collection', () => {
   const { context } = loadApp();
-  const plan = context.recommendPayoutRange(35000, 40000, { workdays: 19, remainingDays: 5 }, 18, 0, 35000);
+  const plan = context.recommendHours(40000, { workdays: 19, remainingDays: 5 }, 18, 0, 35000);
   assert.equal(plan.more, 0);
   assert.equal(plan.hours, 7);
 });
 
-test('payout selection advances in 5000 MXN bands and preserves the saved upper target', () => {
-  const { context, node } = loadApp();
-  const form = { plannerBand: node('band'), payoutTargetMin: { value: '30000' }, payoutTargetMax: { value: '40000' } };
-  context.setupPlannerBands(form);
-  const options = form.plannerBand.children;
-  assert.equal(options.length, 17);
-  assert.equal(options[0].value, '20000');
-  for (let i = 1; i < options.length; i++) assert.equal(Number(options[i].value) - Number(options[i - 1].value), 5000);
-  assert.equal(form.plannerBand.value, '40000');
-  assert.equal(form.payoutTargetMin.value, 35000);
+test('existing range settings migrate to a single target without losing the chosen amount', () => {
+  const { context } = loadApp();
+  assert.equal(context.normalise({ payoutTargetMin: 45000, payoutTargetMax: 50000 }).payoutTarget, 50000);
+  assert.equal(context.normalise({ payoutTarget: 42000, payoutTargetMax: 50000 }).payoutTarget, 42000);
+  assert.equal(context.normalise({}).payoutTarget, 40000);
+});
+
+test('all dashboard and settings element references still exist after simplification', () => {
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  for (const [, id] of source.matchAll(/\$\('([^']+)'\)/g)) {
+    assert.ok(html.includes(`id="${id}"`), `Missing element: ${id}`);
+  }
+  assert.ok(!html.includes('plannerBand'));
+  assert.ok(!html.includes('Payout range'));
 });

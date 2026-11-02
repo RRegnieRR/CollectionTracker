@@ -15,10 +15,10 @@
 .settings-tabs button[aria-selected="true"]{background:#fff;color:#1d1d1f;box-shadow:0 1px 4px rgba(23,30,44,.1)}
 .settings-tabs button:focus-visible,.hours-plan-option:focus-visible{outline:2px solid #007aff;outline-offset:2px}
 .settings-content{min-height:0;overflow:auto;padding:2px}
-.settings-tab-panel{display:grid;gap:16px;min-height:305px;align-content:start}
+.settings-tab-panel{display:grid;gap:16px;min-height:250px;align-content:start}
 .settings-columns{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:24px;align-items:start}
 .settings-column{display:grid;gap:10px;min-width:0;align-content:start}
-.settings-hint{margin:0;font-size:11px;line-height:1.4;color:rgba(60,60,67,.6)}
+.settings-hint{margin:0;font-size:11px;line-height:1.4;color:#6b7280}
 .planner-calendar{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .planner-calendar strong{font-size:13px;font-weight:600}
 .planner-calendar button{min-height:28px;padding:4px 9px;font-size:12px}
@@ -49,6 +49,11 @@
 article.hours-plan-option{cursor:default}
 article.hours-plan-option:hover{border-color:rgba(120,120,128,.16)}
 .hours-plan-option strong{font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+.hours-plan-option .plan-heading strong{font-size:30px;line-height:1.2;letter-spacing:-.03em}
+.hours-plan-option .plan-heading strong small{font-size:13px;letter-spacing:0;color:rgba(60,60,67,.65);font-weight:400}
+.hours-plan-option{gap:8px;padding:14px;background:#f7f9fc;border-color:#e6eaf1}
+.planner-details summary{color:#007aff;cursor:pointer;font-size:12px;padding:8px 0}
+.modal{background:#fff;border-color:#e7e9ee;box-shadow:0 20px 70px rgba(23,30,44,.18)}
 .hours-plan-option span{font-size:11px;line-height:1.4;color:rgba(60,60,67,.65)}
 .plan-heading{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
 .plan-heading b{color:#007aff;font-size:12px;font-weight:600;white-space:nowrap}

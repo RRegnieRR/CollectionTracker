@@ -5,47 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
-  <link rel="stylesheet" href="styles.css?v=tiers-cap-simple" />
-  <link rel="stylesheet" href="settings.css?v=cap-aware-planner" />
+  <link rel="stylesheet" href="styles.css?v=simple-dashboard" />
+  <link rel="stylesheet" href="settings.css?v=simple-dashboard" />
 </head>
 <body>
   <main class="shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-mark">↗</span><span>Collection Tracker</span></div>
-      <button class="ghost-button" id="settingsButton" type="button"><span>⚙</span> Settings</button>
+      <div class="brand">Collection Tracker</div>
+      <button class="ghost-button" id="settingsButton" type="button">Settings</button>
     </header>
 
     <section class="hero-card">
       <div class="hero-copy">
         <p class="eyebrow" id="monthLabel">September 2026</p>
+        <p class="hero-subtitle">Daily collection target · USD</p>
         <h1><span id="dailyAmount">$0.00</span><small> / day</small></h1>
       </div>
-      <div class="hero-orbit" aria-hidden="true"><div class="orbit-ring"></div><div class="orbit-dot"></div><span>PACE</span></div>
       <div class="today-block">
         <div class="today-heading"><span id="todayLabel">Today</span><span class="progress-text" id="progressText">$0.00 of $0.00</span></div>
         <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-        <button class="today-remaining" id="todayButton" type="button">$0.00 remaining today <span>↗</span></button>
+        <button class="today-remaining" id="todayButton" type="button">+ Add collection</button>
         <input class="today-editor" id="todayEditor" inputmode="decimal" aria-label="Collected today" />
       </div>
       <section class="stat-grid" aria-label="Collection summary">
-      <article class="stat-card"><div class="stat-icon blue">◎</div><p>Monthly goal</p><strong id="goalAmount">$0.00</strong></article>
-      <article class="stat-card"><div class="stat-icon orange">↗</div><p>To next tier</p><strong id="nextTierAmount">$0.00</strong></article>
-      <article class="stat-card"><div class="stat-icon purple">◷</div><p>Workdays left</p><strong id="daysLeft">0</strong></article>
-      <article class="stat-card"><div class="stat-icon green">$</div><p>Estimated payout</p><strong id="payoutAmount">MX$0.00</strong></article>
+      <article class="stat-card payout-stat"><p>Estimated payout</p><strong id="payoutAmount">$0.00</strong></article>
+      <article class="stat-card"><p>Collection goal · USD</p><strong id="goalAmount">$0.00</strong></article>
+      <article class="stat-card"><p>Workdays left</p><strong id="daysLeft">0</strong></article>
       </section>
     </section>
 
     <section class="lower-grid">
-      <article class="panel progress-panel"><div class="panel-head"><div><p class="eyebrow">MONTHLY PROGRESS</p><h2 id="collectedSummary">$0.00 collected</h2></div><span class="pill on-track" id="ratePill">On track</span></div><div class="big-progress-track"><div class="big-progress-fill" id="monthProgressFill"></div></div><div class="progress-meta"><span id="monthProgressPercent">0% of goal</span><span id="monthRemaining">$0.00 remaining</span></div><div class="milestones"><span>Start</span><span class="milestone-line"><i></i><i></i><i></i></span><span>Goal</span></div></article>
-      <article class="panel tier-panel"><div class="panel-head"><div><p class="eyebrow">COMMISSION TIER</p><h2 id="currentTier">Base rate</h2></div><span class="tier-badge">Active</span></div><div class="tier-rate"><strong id="tierRate">5.35%</strong><span>estimated commission</span></div><div class="tier-bar"><div id="tierProgressFill"></div></div><p class="tier-copy" id="tierCopy">Set a monthly goal and start collecting to unlock the next tier.</p></article>
+      <article class="panel progress-panel"><div class="panel-head"><div><p class="eyebrow">This month · USD</p><h2 id="collectedSummary">$0.00 collected</h2></div><span class="pill on-track" id="ratePill">On track</span></div><div class="big-progress-track"><div class="big-progress-fill" id="monthProgressFill"></div></div><div class="progress-meta"><span id="monthProgressPercent">0% of goal</span><span id="monthRemaining">$0.00 left</span></div></article>
+      <article class="panel tier-panel"><div class="panel-head"><div><p class="eyebrow">Commission</p><h2 id="currentTier">Base</h2></div></div><div class="tier-rate"><strong id="tierRate">5.35%</strong></div><div class="tier-bar"><div id="tierProgressFill"></div></div><p class="tier-copy" id="tierCopy"></p></article>
     </section>
-    <section class="panel payout-tiers-panel" aria-labelledby="payoutTiersTitle">
-      <div class="panel-head"><div><p class="eyebrow">PAYOUT LEVELS</p><h2 id="payoutTiersTitle">What each tier pays</h2></div><span class="tier-count" id="tierCount">Level 3 cap</span></div>
+    <details class="panel payout-tiers-panel">
+      <summary class="levels-summary"><span>Commission levels</span><span class="tier-count" id="tierCount">Level 3 cap</span></summary>
       <p class="payout-tiers-copy" id="payoutTiersCopy">Maximum commission level at 6 or fewer hours per day.</p>
       <div class="tier-list" id="tierList" aria-live="polite"></div>
       <button class="tier-list-toggle" id="tierListToggle" type="button" aria-expanded="false">Add 5 more levels +</button>
-    </section>
-    <footer><span>Saved locally in your browser</span></footer>
+    </details>
+    <footer><span>Saved on this device</span><button id="planHoursButton" class="text-button" type="button">Plan next month →</button></footer>
   </main>
 
   <div class="modal-backdrop" id="settingsModal" hidden>
@@ -84,11 +83,10 @@
       </div>
       <div class="planner-calendar"><strong id="plannerWorkdays" aria-live="polite"></strong><button id="plannerThisMonth" class="secondary-button" type="button">This month</button></div>
       <p id="plannerPeriodNote" class="settings-hint"></p>
-      <label>Payout range<select name="plannerBand" aria-label="Payout range in MXN"></select></label>
-      <input name="payoutTargetMin" type="hidden" /><input name="payoutTargetMax" type="hidden" />
+      <label>I want to earn · MXN<input name="payoutTarget" type="number" min="1" step="any" required inputmode="decimal" placeholder="40000" /></label>
       </div>
       <div class="settings-column">
-      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Recommended declaration</h4><div id="hoursRecommendationOptions"></div><table class="planner-comparison"><caption id="plannerCompareCaption"></caption><thead><tr><th>Hours</th><th>Payout · MXN</th><th>Tier</th></tr></thead><tbody id="plannerComparison"></tbody></table><p id="plannerGrowth" class="settings-hint" aria-live="polite"></p><p class="settings-hint">Targets the top of your range. Compares 6–8h/day.</p></section>
+      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Suggested hours</h4><div id="hoursRecommendationOptions"></div><p id="plannerGrowth" class="settings-hint" aria-live="polite"></p><details class="planner-details"><summary>Compare 6, 7 &amp; 8 hours</summary><table class="planner-comparison"><caption id="plannerCompareCaption"></caption><thead><tr><th>Hours</th><th>Payout · MXN</th><th>Tier</th></tr></thead><tbody id="plannerComparison"></tbody></table></details></section>
       </div>
       </div>
       </section>
@@ -104,6 +102,6 @@
       <div class="modal-actions"><span id="settingsStatus" role="status" aria-live="polite"></span><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save</button></div>
     </form>
   </div>
-  <script src="app.js?v=cap-aware-planner"></script>
+  <script src="app.js?v=simple-dashboard"></script>
 </body>
 </html>
