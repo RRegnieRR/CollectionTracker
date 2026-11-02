@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
   <link rel="stylesheet" href="styles.css?v=tiers-cap-simple" />
-  <link rel="stylesheet" href="settings.css?v=monthly-planner" />
+  <link rel="stylesheet" href="settings.css?v=payout-range-planner" />
 </head>
 <body>
   <main class="shell">
@@ -84,14 +84,14 @@
       </div>
       <div class="planner-calendar"><strong id="plannerWorkdays" aria-live="polite"></strong><button id="plannerThisMonth" class="secondary-button" type="button">This month</button></div>
       <p id="plannerPeriodNote" class="settings-hint"></p>
-      <fieldset class="settings-target"><legend>Payout target · MXN</legend><div class="settings-pair">
+      <fieldset class="settings-target"><legend>Custom range · MXN</legend><div class="settings-pair">
       <label>From<input name="payoutTargetMin" type="text" inputmode="decimal" autocomplete="off" /></label>
       <label>To<input name="payoutTargetMax" type="text" inputmode="decimal" autocomplete="off" /></label>
       </div>
       </fieldset>
       </div>
       <div class="settings-column">
-      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Recommended</h4><div id="hoursRecommendationOptions"></div></section>
+      <section class="hours-planner" aria-labelledby="hoursPlannerTitle"><h4 id="hoursPlannerTitle">Payout → hours/day</h4><p class="settings-hint">Least collection to reach each range’s upper target.</p><div id="hoursRecommendationOptions"></div></section>
       </div>
       </div>
       </section>
@@ -107,6 +107,6 @@
       <div class="modal-actions"><span id="settingsStatus" role="status" aria-live="polite"></span><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save</button></div>
     </form>
   </div>
-  <script src="app.js?v=office-holiday-calendar"></script>
+  <script src="app.js?v=payout-range-planner"></script>
 </body>
 </html>

@@ -152,17 +152,43 @@ function tierGoal(index, hours, workdays) {
 function planForPayout(hours, workdays, payoutTargetMxn, mxnRate, giftCard) {
   const targetUsd = Math.max(0, payoutTargetMxn / mxnRate);
   if (giftCard >= targetUsd) return { hours, collection: 0, dailyCollection: 0, tier: 'Bonus only' };
-  const availableTiers = hours <= 6 ? tiers.slice(0, maxTierForSixOrFewerHours) : tiers;
+  const availableTiers = [['Base', 0, .0535], ...(hours <= 6 ? tiers.slice(0, maxTierForSixOrFewerHours) : tiers)];
   for (let index = 0; index < availableTiers.length; index += 1) {
     const tier = availableTiers[index];
-    const minimum = tierGoal(index, hours, workdays);
-    const nextMinimum = index + 1 < availableTiers.length ? tierGoal(index + 1, hours, workdays) : Infinity;
-    const collection = Math.max(minimum, (targetUsd - giftCard) / tier[2]);
+    const minimum = tier[1] * hours * workdays;
+    const nextMinimum = index + 1 < availableTiers.length ? availableTiers[index + 1][1] * hours * workdays : Infinity;
+    const collection = Math.ceil((Math.max(minimum, (targetUsd - giftCard) / tier[2]) - 1e-9) * 100) / 100;
     if (collection < nextMinimum || index === availableTiers.length - 1) {
       return { hours, collection, dailyCollection: collection / workdays, tier: tier[0] };
     }
   }
   return null;
+}
+
+function workdayCounts(date, now = new Date(), override = null) {
+  let total = 0, remaining = 0;
+  const current = monthKey(date) === monthKey(now);
+  const future = new Date(date.getFullYear(), date.getMonth(), 1) > new Date(now.getFullYear(), now.getMonth(), 1);
+  const days = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  for (let day = 1; day <= days; day += 1) {
+    if (!isWorkday(new Date(date.getFullYear(), date.getMonth(), day))) continue;
+    total += 1;
+    if (future || (current && day >= now.getDate())) remaining += 1;
+  }
+  const elapsedBeforeToday = total - remaining;
+  return { workdays: override ?? total, remainingDays: override === null ? remaining : Math.max(0, override - elapsedBeforeToday) };
+}
+
+function recommendPayoutRange(minTarget, maxTarget, period, mxnRate, giftCard, collected = 0) {
+  const candidates = [6, 7, 8].map((hours) => {
+    const lower = planForPayout(hours, period.workdays, minTarget, mxnRate, giftCard);
+    const upper = planForPayout(hours, period.workdays, maxTarget, mxnRate, giftCard);
+    const minimumMore = Math.max(0, lower.collection - collected);
+    const more = Math.max(0, upper.collection - collected);
+    const daily = (amountLeft) => amountLeft === 0 ? 0 : period.remainingDays ? Math.ceil(amountLeft / period.remainingDays * 100) / 100 : null;
+    return { hours, minTarget, maxTarget, minimumMore, more, minimumDaily: daily(minimumMore), daily: daily(more), collection: upper.collection };
+  });
+  return candidates.reduce((best, plan) => !best || plan.more < best.more ? plan : best, null);
 }
 
 function mxnMoney(value) {
@@ -175,19 +201,21 @@ function plannerPeriod(form, now = new Date()) {
   if (!Number.isInteger(year) || year < 1900 || year > 9999 || !Number.isInteger(month) || month < 0 || month > 11) return null;
   const date = new Date(year, month, 1);
   const current = monthKey(date) === monthKey(now);
-  return { date, current, workdays: current ? goalWorkdays(form) : automaticWorkdays(date) };
+  const override = current ? goalWorkdays(form) : null;
+  return { date, current, ...workdayCounts(date, now, override) };
 }
 
-function resetPlannerPeriod(form) {
+function resetPlannerPeriod(form, nextMonth = true) {
   const now = new Date();
+  const date = new Date(now.getFullYear(), now.getMonth() + (nextMonth ? 1 : 0), 1);
   form.plannerMonth.replaceChildren(...Array.from({ length: 12 }, (_, month) => {
     const option = document.createElement('option');
     option.value = String(month);
     option.textContent = new Date(2026, month, 1).toLocaleDateString('en-US', { month: 'long' });
     return option;
   }));
-  form.plannerMonth.value = String(now.getMonth());
-  form.plannerYear.value = String(now.getFullYear());
+  form.plannerMonth.value = String(date.getMonth());
+  form.plannerYear.value = String(date.getFullYear());
 }
 
 function updateHoursPlanner(form) {
@@ -200,28 +228,26 @@ function updateHoursPlanner(form) {
     $('plannerPeriodNote').textContent = '';
     return;
   }
-  const { workdays } = period;
-  $('plannerWorkdays').textContent = `${workdays} workdays`;
-  $('plannerPeriodNote').textContent = period.current ? 'Current month · select hours to apply.' : 'Preview only · current schedule unchanged.';
+  const { workdays, remainingDays } = period;
+  $('plannerWorkdays').textContent = period.current ? `${remainingDays} days left · ${workdays} this month` : `${workdays} workdays`;
+  $('plannerPeriodNote').textContent = period.current ? 'Uses your collections so far.' : 'Plan next month’s declaration.';
   $('plannerThisMonth').hidden = period.current;
   const minTarget = Math.max(0, amount(form.payoutTargetMin.value, defaults.payoutTargetMin));
   const maxTarget = Math.max(minTarget, amount(form.payoutTargetMax.value, defaults.payoutTargetMax));
   const mxnRate = Math.max(0.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
   const giftCard = amount(form.giftCard.value);
-  const buildPlan = (target) => [6, 7, 8]
-    .map((hours) => planForPayout(hours, workdays, target, mxnRate, giftCard))
-    .reduce((best, plan) => !best || plan.collection < best.collection ? plan : best, null);
-  const plans = [minTarget, maxTarget].map((target) => ({ target, plan: buildPlan(target) }));
-  list.replaceChildren(...plans.map(({ target, plan }) => {
-    const button = document.createElement(period.current ? 'button' : 'article');
-    if (period.current) button.type = 'button';
+  const collected = period.current ? amount(form.before.value) + amount(form.today.value) : 0;
+  const ranges = [[20000, 30000], [30000, 40000], [40000, 50000]];
+  if (!ranges.some(([min, max]) => min === minTarget && max === maxTarget)) ranges.push([minTarget, maxTarget]);
+  list.replaceChildren(...ranges.map(([min, max]) => {
+    const plan = recommendPayoutRange(min, max, period, mxnRate, giftCard, collected);
+    const button = document.createElement('article');
     button.className = 'hours-plan-option';
-    if (period.current) {
-      button.dataset.hours = String(plan.hours);
-      button.setAttribute('aria-pressed', String(Number(form.hours.value) === plan.hours));
-    }
-    button.setAttribute('aria-label', `${plan.hours} hours per day for ${mxnMoney(target)} MXN. Collect ${money(plan.collection)} USD total, ${money(plan.dailyCollection)} USD per day.${period.current ? ' Select to apply.' : ' Preview only.'}`);
-    button.innerHTML = `<div class="plan-heading"><strong>${mxnMoney(target)} MXN</strong><b>${plan.hours} h/day</b></div><span>${money(plan.collection)} total · ${money(plan.dailyCollection)}/day <small>USD</small></span>`;
+    const pace = plan.more === 0 ? 'Target reached' : plan.daily === null ? 'No workdays left' : `${money(plan.minimumDaily)}–${money(plan.daily)}/day USD`;
+    const range = `${mxnMoney(min)}–${mxnMoney(max)} MXN`;
+    button.title = `${money(plan.minimumMore)}–${money(plan.more)} USD still to collect. Hours are chosen for the upper target; tier jumps may exceed it. ${plan.hours * 5} hours/week.`;
+    button.setAttribute('aria-label', `${range}: ${plan.hours} hours per day, ${plan.hours * 5} hours per week. ${pace}. ${button.title}`);
+    button.innerHTML = `<div class="plan-heading"><strong>${range}</strong><b>${plan.hours} h/day</b></div><span>${pace}</span>`;
     return button;
   }));
 }
@@ -229,24 +255,9 @@ function updateHoursPlanner(form) {
 function snapshot() {
   ensureCurrentDate();
   const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth();
-  const days = new Date(year, month + 1, 0).getDate();
-  let calendarRemainingDays = 0;
-  let calendarWorkdaysInMonth = 0;
-  for (let day = 1; day <= days; day += 1) {
-    if (isWorkday(new Date(year, month, day))) {
-      calendarWorkdaysInMonth += 1;
-      if (day >= now.getDate()) calendarRemainingDays += 1;
-    }
-  }
   const workday = isWorkday(now);
-  const calendarElapsedWorkdays = Math.max(0, calendarWorkdaysInMonth - calendarRemainingDays + (workday ? 1 : 0));
-  const workdaysInMonth = data.workdaysOverride ?? calendarWorkdaysInMonth;
-  const remainingDays = data.workdaysOverride === null
-    ? calendarRemainingDays
-    : Math.max(0, workdaysInMonth - calendarElapsedWorkdays);
-  const elapsedWorkdays = Math.min(workdaysInMonth, calendarElapsedWorkdays);
+  const { workdays: workdaysInMonth, remainingDays } = workdayCounts(now, now, data.workdaysOverride);
+  const elapsedWorkdays = Math.min(workdaysInMonth, Math.max(0, workdaysInMonth - remainingDays + (workday ? 1 : 0)));
   const today = stagedToday ?? data.today;
   const collected = data.before + today;
   let tier = ['Base', 0, .0535];
@@ -558,22 +569,11 @@ $('settingsForm').hours.addEventListener('input', (event) => {
 });
 $('plannerThisMonth').addEventListener('click', () => {
   const form = $('settingsForm');
-  resetPlannerPeriod(form);
+  resetPlannerPeriod(form, false);
   updateHoursPlanner(form);
 });
-['payoutTargetMin', 'payoutTargetMax', 'giftCard', 'currencyRate'].forEach((field) => {
+['payoutTargetMin', 'payoutTargetMax', 'giftCard', 'currencyRate', 'before', 'today'].forEach((field) => {
   $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
-});
-$('hoursRecommendationOptions').addEventListener('click', (event) => {
-  const option = event.target.closest('[data-hours]');
-  if (!option) return;
-  const form = $('settingsForm');
-  if (!plannerPeriod(form)?.current) return;
-  form.hours.value = option.dataset.hours;
-  updateGoalOptions(form);
-  updateGoalSummary(form);
-  updateHoursPlanner(form);
-  settingsStatus('Hours applied');
 });
 $('editWorkdaysButton').addEventListener('click', () => {
   const form = $('settingsForm');

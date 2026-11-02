@@ -82,11 +82,62 @@ test('future recommendations are previews and do not change the active schedule'
   const before = vm.runInContext('JSON.stringify(data)', context);
   context.updateHoursPlanner(form);
   const recommendations = node('hoursRecommendationOptions').children;
-  assert.equal(recommendations.length, 2);
+  assert.equal(recommendations.length, 3);
   recommendations.forEach((recommendation) => {
     assert.equal(recommendation.tagName, 'article');
     assert.equal(recommendation.dataset.hours, undefined);
   });
   assert.equal(form.hours.value, '8');
   assert.equal(vm.runInContext('JSON.stringify(data)', context), before);
+});
+
+test('payout bands choose the least collection for their upper target', () => {
+  const { context } = loadApp();
+  const december = { workdays: 21, remainingDays: 21 };
+  const low = context.recommendPayoutRange(20000, 30000, december, 18, 0);
+  const middle = context.recommendPayoutRange(30000, 40000, december, 18, 0);
+  const high = context.recommendPayoutRange(40000, 50000, december, 18, 0);
+  assert.equal(low.hours, 6);
+  assert.equal(low.collection, 23058);
+  assert.equal(middle.hours, 6);
+  assert.equal(middle.collection, 30234.32);
+  assert.equal(high.hours, 7);
+  assert.equal(high.collection, 34251);
+  assert.ok(high.collection * .0835 * 18 >= 50000);
+  const november = context.recommendPayoutRange(30000, 40000, { workdays: 19, remainingDays: 19 }, 18, 0);
+  assert.equal(november.hours, 7);
+  assert.ok(november.collection < middle.collection);
+});
+
+test('remaining pace subtracts collections and uses the days still available', () => {
+  const { context } = loadApp();
+  const period = { workdays: 21, remainingDays: 5 };
+  const plan = context.recommendPayoutRange(30000, 40000, period, 18, 0, 20000);
+  assert.equal(plan.more, 10234.32);
+  assert.equal(plan.daily, 2046.87);
+  const achieved = context.recommendPayoutRange(30000, 40000, period, 18, 0, 40000);
+  assert.equal(achieved.more, 0);
+  assert.equal(achieved.daily, 0);
+  const closed = context.recommendPayoutRange(30000, 40000, { ...period, remainingDays: 0 }, 18, 0);
+  assert.equal(closed.daily, null);
+});
+
+test('workdays remaining include today but exclude office closures and weekends', () => {
+  const { context } = loadApp();
+  const month = new Date(2026, 10, 1);
+  const counts = context.workdayCounts(month, new Date(2026, 10, 25));
+  assert.equal(counts.workdays, 19);
+  assert.equal(counts.remainingDays, 2); // Wednesday 25th and Monday 30th.
+  assert.equal(context.workdayCounts(month, new Date(2026, 10, 26)).remainingDays, 1);
+  assert.equal(context.workdayCounts(new Date(2026, 11, 1), new Date(2026, 10, 25)).remainingDays, 21);
+});
+
+test('low targets can use base commission and a bonus can cover the target', () => {
+  const { context } = loadApp();
+  const base = context.planForPayout(6, 21, 1000, 18, 0);
+  assert.equal(base.tier, 'Base');
+  assert.ok(base.collection * .0535 * 18 >= 1000);
+  const covered = context.recommendPayoutRange(20000, 30000, { workdays: 21, remainingDays: 21 }, 18, 2000);
+  assert.equal(covered.more, 0);
+  assert.equal(covered.hours, 6);
 });
