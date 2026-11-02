@@ -129,9 +129,11 @@ function last(year, month, weekday) {
   return new Date(year, month, date.getDate() - ((date.getDay() - weekday + 7) % 7));
 }
 function holidays(year) {
+  // The six office holidays; next New Year's can be observed in December.
   return [
-    observedFixed(year, 0, 1), observedFixed(year, 5, 19), observedFixed(year, 6, 4), observedFixed(year, 10, 11), observedFixed(year, 11, 25),
-    nth(year, 0, 1, 3), nth(year, 1, 1, 3), last(year, 4, 1), nth(year, 8, 1, 1), nth(year, 9, 1, 2), nth(year, 10, 4, 4)
+    observedFixed(year, 0, 1), last(year, 4, 1), observedFixed(year, 6, 4),
+    nth(year, 8, 1, 1), nth(year, 10, 4, 4), observedFixed(year, 11, 25),
+    observedFixed(year + 1, 0, 1)
   ].map(dateKey);
 }
 function isWorkday(date) {
@@ -165,10 +167,41 @@ function mxnMoney(value) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 }).format(amount(value));
 }
 
+function plannerPeriod(form, now = new Date()) {
+  const year = Number(form.plannerYear.value);
+  const month = Number(form.plannerMonth.value);
+  if (!Number.isInteger(year) || year < 1900 || year > 9999 || !Number.isInteger(month) || month < 0 || month > 11) return null;
+  const date = new Date(year, month, 1);
+  const current = monthKey(date) === monthKey(now);
+  return { date, current, workdays: current ? goalWorkdays(form) : automaticWorkdays(date) };
+}
+
+function resetPlannerPeriod(form) {
+  const now = new Date();
+  form.plannerMonth.replaceChildren(...Array.from({ length: 12 }, (_, month) => {
+    const option = document.createElement('option');
+    option.value = String(month);
+    option.textContent = new Date(2026, month, 1).toLocaleDateString('en-US', { month: 'long' });
+    return option;
+  }));
+  form.plannerMonth.value = String(now.getMonth());
+  form.plannerYear.value = String(now.getFullYear());
+}
+
 function updateHoursPlanner(form) {
   const list = $('hoursRecommendationOptions');
   if (!list) return;
-  const workdays = goalWorkdays(form);
+  const period = plannerPeriod(form);
+  if (!period) {
+    list.replaceChildren();
+    $('plannerWorkdays').textContent = 'Choose a valid year';
+    $('plannerPeriodNote').textContent = '';
+    return;
+  }
+  const { workdays } = period;
+  $('plannerWorkdays').textContent = `${workdays} workdays`;
+  $('plannerPeriodNote').textContent = period.current ? 'Current month · select hours to apply.' : 'Preview only · current schedule unchanged.';
+  $('plannerThisMonth').hidden = period.current;
   const minTarget = Math.max(0, amount(form.payoutTargetMin.value, defaults.payoutTargetMin));
   const maxTarget = Math.max(minTarget, amount(form.payoutTargetMax.value, defaults.payoutTargetMax));
   const mxnRate = Math.max(0.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
@@ -178,12 +211,14 @@ function updateHoursPlanner(form) {
     .reduce((best, plan) => !best || plan.collection < best.collection ? plan : best, null);
   const plans = [minTarget, maxTarget].map((target) => ({ target, plan: buildPlan(target) }));
   list.replaceChildren(...plans.map(({ target, plan }) => {
-    const button = document.createElement('button');
-    button.type = 'button';
+    const button = document.createElement(period.current ? 'button' : 'article');
+    if (period.current) button.type = 'button';
     button.className = 'hours-plan-option';
-    button.dataset.hours = String(plan.hours);
-    button.setAttribute('aria-pressed', String(Number(form.hours.value) === plan.hours));
-    button.setAttribute('aria-label', `${plan.hours} hours per day for ${mxnMoney(target)} MXN. Collect ${money(plan.collection)} USD total, ${money(plan.dailyCollection)} USD per day. Select to apply.`);
+    if (period.current) {
+      button.dataset.hours = String(plan.hours);
+      button.setAttribute('aria-pressed', String(Number(form.hours.value) === plan.hours));
+    }
+    button.setAttribute('aria-label', `${plan.hours} hours per day for ${mxnMoney(target)} MXN. Collect ${money(plan.collection)} USD total, ${money(plan.dailyCollection)} USD per day.${period.current ? ' Select to apply.' : ' Preview only.'}`);
     button.innerHTML = `<div class="plan-heading"><strong>${mxnMoney(target)} MXN</strong><b>${plan.hours} h/day</b></div><span>${money(plan.collection)} total · ${money(plan.dailyCollection)}/day <small>USD</small></span>`;
     return button;
   }));
@@ -420,6 +455,7 @@ function openSettings() {
   updateGoalOptions(form);
   updateGoalSummary(form);
   refreshCurrencyFields(form);
+  resetPlannerPeriod(form);
   updateHoursPlanner(form);
   settingsStatus('');
   $('settingsModal').hidden = false;
@@ -466,8 +502,11 @@ function closeTodayEditor(commit) {
 $('settingsButton').addEventListener('click', openSettings);
 $('closeModal').addEventListener('click', () => saveSettings($('settingsForm')));
 $('cancelModal').addEventListener('click', closeSettings);
-$('settingsForm').addEventListener('input', () => settingsStatus());
-$('settingsForm').addEventListener('change', () => settingsStatus());
+const markSettingsChanged = (event) => {
+  if (!['plannerMonth', 'plannerYear'].includes(event.target.name)) settingsStatus();
+};
+$('settingsForm').addEventListener('input', markSettingsChanged);
+$('settingsForm').addEventListener('change', markSettingsChanged);
 $('settingsForm').customCurrency.addEventListener('input', (event) => {
   $('exchangeRateCurrency').textContent = event.currentTarget.value.toUpperCase() || 'EUR';
 });
@@ -512,6 +551,14 @@ $('settingsForm').hours.addEventListener('input', (event) => {
   updateGoalSummary(event.currentTarget.form);
   updateHoursPlanner(event.currentTarget.form);
 });
+['plannerMonth', 'plannerYear'].forEach((field) => {
+  $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
+});
+$('plannerThisMonth').addEventListener('click', () => {
+  const form = $('settingsForm');
+  resetPlannerPeriod(form);
+  updateHoursPlanner(form);
+});
 ['payoutTargetMin', 'payoutTargetMax', 'giftCard', 'currencyRate'].forEach((field) => {
   $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
 });
@@ -519,6 +566,7 @@ $('hoursRecommendationOptions').addEventListener('click', (event) => {
   const option = event.target.closest('[data-hours]');
   if (!option) return;
   const form = $('settingsForm');
+  if (!plannerPeriod(form)?.current) return;
   form.hours.value = option.dataset.hours;
   updateGoalOptions(form);
   updateGoalSummary(form);
