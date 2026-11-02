@@ -6,7 +6,8 @@ const vm = require('node:vm');
 
 // Exercise the app's calendar and planner without starting its dashboard DOM.
 const source = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8');
-function loadApp() {
+function loadApp(saved = { webInitialised: true }) {
+  const storage = { text: JSON.stringify(saved) };
   const nodes = new Map();
   const node = (id) => {
     if (!nodes.has(id)) nodes.set(id, { hidden: true, children: [], dataset: {}, attributes: {},
@@ -15,7 +16,7 @@ function loadApp() {
     return nodes.get(id);
   };
   const context = vm.createContext({
-    localStorage: { getItem: () => JSON.stringify({ webInitialised: true }), setItem() {} },
+    localStorage: { getItem: () => storage.text, setItem(key, value) { storage.text = value; } },
     document: { getElementById: node, createElement: (tag) => ({
       tagName: tag, dataset: {}, attributes: {},
       setAttribute(key, value) { this.attributes[key] = value; }
@@ -23,7 +24,7 @@ function loadApp() {
   });
   vm.runInContext(source.slice(0, source.indexOf('function snapshot()')) +
     source.slice(source.indexOf('function automaticWorkdays('), source.indexOf('function updateGoalOptions(')), context);
-  return { context, node };
+  return { context, node, storage };
 }
 
 test('office calendar has the expected monthly workday counts', () => {
@@ -186,4 +187,105 @@ test('all dashboard and settings element references still exist after simplifica
   }
   assert.ok(!html.includes('plannerBand'));
   assert.ok(!html.includes('Payout range'));
+});
+
+function savedState(context) { return JSON.parse(vm.runInContext('JSON.stringify(data)', context)); }
+const initialCollections = { webInitialised: true, month: '2026-10', day: '2026-10-2', before: 1000, today: 100 };
+
+test('legacy total is preserved separately from the known daily amount', () => {
+  const { context } = loadApp(initialCollections);
+  assert.equal(context.save(), true);
+  const record = savedState(context).collectionHistory['2026-10'];
+  assert.equal(record.total, 1100);
+  assert.equal(record.adjustment, 1000);
+  assert.equal(record.days['2026-10-2'], 100);
+});
+
+test('daily saves and corrections replace the daily total instead of counting it twice', () => {
+  const { context } = loadApp(initialCollections);
+  context.ensureCurrentDate(new Date(2026, 10, 3));
+  context.setRecordedDay('2026-10-3', 50);
+  context.save(); context.save();
+  assert.equal(savedState(context).collectionHistory['2026-10'].total, 1150);
+  context.setRecordedDay('2026-10-3', 30);
+  context.save();
+  assert.equal(savedState(context).collectionHistory['2026-10'].total, 1130);
+  context.ensureCurrentDate(new Date(2026, 10, 4));
+  assert.equal(savedState(context).before, 1130);
+  assert.equal(savedState(context).today, 0);
+  assert.equal(savedState(context).collectionHistory['2026-10'].days['2026-10-3'], 30);
+});
+
+test('month and year changes archive old totals before resetting the dashboard', () => {
+  const { context } = loadApp({ ...initialCollections, month: '2026-11', day: '2026-11-31' });
+  context.ensureCurrentDate(new Date(2027, 0, 1));
+  const state = savedState(context);
+  assert.equal(state.collectionHistory['2026-11'].total, 1100);
+  assert.equal(state.collectionHistory['2027-0'].total, 0);
+  assert.equal(state.month, '2027-0');
+  assert.equal(state.before, 0);
+  assert.equal(state.today, 0);
+});
+
+test('an entry completed after midnight keeps its original month', () => {
+  const { context } = loadApp({ ...initialCollections, day: '2026-10-30' });
+  context.ensureCurrentDate(new Date(2026, 11, 1));
+  context.setRecordedDay('2026-10-30', 150);
+  context.save();
+  const state = savedState(context);
+  assert.equal(state.collectionHistory['2026-10'].total, 1150);
+  assert.equal(state.collectionHistory['2026-10'].days['2026-10-30'], 150);
+  assert.equal(state.collectionHistory['2026-11'].total, 0);
+  assert.equal(state.today, 0);
+});
+
+test('historical corrections and manual balances reconcile without erasing daily entries', () => {
+  const { context } = loadApp(initialCollections);
+  context.ensureCurrentDate(new Date(2026, 10, 3));
+  context.setRecordedDay('2026-10-2', 80);
+  context.save();
+  assert.equal(savedState(context).before, 1080);
+  vm.runInContext('data.before = 50;', context);
+  context.save();
+  const record = savedState(context).collectionHistory['2026-10'];
+  assert.equal(record.days['2026-10-2'], 80);
+  assert.equal(record.adjustment, -30);
+  assert.equal(record.total, 50);
+});
+
+test('history survives reloading and a zero-valued current month', () => {
+  const { context, storage } = loadApp(initialCollections);
+  context.ensureCurrentDate(new Date(2026, 11, 1));
+  const reloaded = loadApp(JSON.parse(storage.text));
+  const state = savedState(reloaded.context);
+  assert.equal(state.collectionHistory['2026-10'].total, 1100);
+  assert.equal(state.before, 0);
+  assert.equal(state.today, 0);
+  assert.equal(state.day, '2026-11-1');
+});
+
+test('bonus is archived with the payout but never counted as collections', () => {
+  const { context } = loadApp({ ...initialCollections, giftCard: 40 });
+  context.save();
+  const record = savedState(context).collectionHistory['2026-10'];
+  assert.equal(record.total, 1100);
+  assert.equal(record.giftCard, 40);
+  assert.equal(record.estimatedPayoutUsd, 1100 * .0535 + 40);
+});
+
+test('storage failures are reported and the in-memory ledger remains available for backup', () => {
+  const { context, node } = loadApp(initialCollections);
+  context.localStorage.setItem = () => { throw new Error('Quota exceeded'); };
+  assert.equal(context.save(), false);
+  assert.equal(savedState(context).collectionHistory['2026-10'].total, 1100);
+  assert.match(node('storageStatus').textContent, /Could not save/);
+});
+
+test('a stale tab cannot overwrite newer collection history from another tab', () => {
+  const { context, storage, node } = loadApp(initialCollections);
+  const newer = JSON.stringify({ ...initialCollections, today: 250 });
+  storage.text = newer;
+  assert.equal(context.save(), false);
+  assert.equal(storage.text, newer);
+  assert.match(node('storageStatus').textContent, /another tab/);
 });

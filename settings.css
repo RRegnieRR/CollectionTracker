@@ -10,7 +10,12 @@
 .settings-label-note{float:right;color:rgba(60,60,67,.5);font-size:11px}
 .settings-target{min-width:0;margin:0;padding:0;border:0}
 .settings-target legend{margin-bottom:7px;padding:0;font-size:12px;color:rgba(60,60,67,.82)}
-.settings-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:4px;border-radius:10px;background:rgba(120,120,128,.09);flex:none}
+.settings-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;padding:4px;border-radius:10px;background:rgba(120,120,128,.09);flex:none}
+.history-month-total{display:grid;align-content:center;gap:4px}
+.history-month-total span{font-size:11px;color:#6b7280}
+.history-month-total strong{font-size:22px}
+.history-table{font-size:12px}
+.history-table td:last-child,.history-table th:last-child{text-align:right}
 .settings-tabs button{min-width:0;padding:8px 6px;border:0;border-radius:7px;background:transparent;color:rgba(60,60,67,.68);font:500 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}
 .settings-tabs button[aria-selected="true"]{background:#fff;color:#1d1d1f;box-shadow:0 1px 4px rgba(23,30,44,.1)}
 .settings-tabs button:focus-visible,.hours-plan-option:focus-visible{outline:2px solid #007aff;outline-offset:2px}

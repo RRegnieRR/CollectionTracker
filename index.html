@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#f5f5f7" />
   <title>Collection Tracker</title>
   <link rel="stylesheet" href="styles.css?v=simple-dashboard" />
-  <link rel="stylesheet" href="settings.css?v=simple-dashboard" />
+  <link rel="stylesheet" href="settings.css?v=collection-history" />
 </head>
 <body>
   <main class="shell">
@@ -44,7 +44,7 @@
       <div class="tier-list" id="tierList" aria-live="polite"></div>
       <button class="tier-list-toggle" id="tierListToggle" type="button" aria-expanded="false">Add 5 more levels +</button>
     </details>
-    <footer><span>Saved on this device</span><button id="planHoursButton" class="text-button" type="button">Plan next month →</button></footer>
+    <footer><span id="storageStatus" role="status">Saved on this device</span><button id="planHoursButton" class="text-button" type="button">Plan next month →</button></footer>
   </main>
 
   <div class="modal-backdrop" id="settingsModal" hidden>
@@ -54,6 +54,7 @@
         <button id="collectionsTab" type="button" role="tab" aria-controls="collectionsSettings" aria-selected="true" tabindex="0">Collections</button>
         <button id="scheduleTab" type="button" role="tab" aria-controls="scheduleSettings" aria-selected="false" tabindex="-1">Planner</button>
         <button id="payoutTab" type="button" role="tab" aria-controls="payoutSettings" aria-selected="false" tabindex="-1">Payout</button>
+        <button id="historyTab" type="button" role="tab" aria-controls="historySettings" aria-selected="false" tabindex="-1">History</button>
       </div>
       <div class="settings-content">
       <section id="collectionsSettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="collectionsTab">
@@ -98,10 +99,16 @@
       <div id="customCurrencyFields" hidden><label>Currency code<input name="customCurrency" type="text" maxlength="3" pattern="[A-Za-z]{3}" placeholder="EUR" autocomplete="off" /></label></div>
       <label class="gift-card-field" title="Added to your estimated payout and converted to the selected currency.">Gift card / bonus · USD<input name="giftCard" type="text" inputmode="decimal" autocomplete="off" placeholder="0.00" /></label>
       </section>
+      <section id="historySettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="historyTab" hidden>
+      <div class="settings-pair"><label>Month<select name="historyMonth" aria-label="History month"></select></label><div class="history-month-total"><span>Collected · USD</span><strong id="historyTotal">$0.00</strong></div></div>
+      <table class="planner-comparison history-table"><thead><tr><th>Date</th><th>Collected · USD</th></tr></thead><tbody id="historyDays"></tbody></table>
+      <div><button id="downloadBackup" class="secondary-button" type="button">Download backup</button></div>
+      <p class="settings-hint">Saved in this browser. Download a backup before clearing browser data. Earlier combined balances cannot be split into past days.</p>
+      </section>
       </div>
       <div class="modal-actions"><span id="settingsStatus" role="status" aria-live="polite"></span><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save</button></div>
     </form>
   </div>
-  <script src="app.js?v=simple-dashboard"></script>
+  <script src="app.js?v=collection-history"></script>
 </body>
 </html>

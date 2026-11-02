@@ -25,7 +25,7 @@ function readData() {
   try {
     const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
     const hasWebValues = amount(saved.goal) > 0 || amount(saved.before) > 0 || amount(saved.today) > 0;
-    return hasWebValues || saved.importedOriginalApp || saved.webInitialised ? saved : originalWindowsValues;
+    return hasWebValues || saved.importedOriginalApp || saved.webInitialised || saved.collectionHistory ? saved : originalWindowsValues;
   } catch {
     return originalWindowsValues;
   }
@@ -50,6 +50,7 @@ function normalise(values) {
     currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1)),
     giftCard: amount(values.giftCard),
     payoutTarget: Math.max(1, amount(values.payoutTarget ?? values.payoutTargetMax ?? defaults.payoutTarget)),
+    collectionHistory: values.collectionHistory && typeof values.collectionHistory === 'object' && !Array.isArray(values.collectionHistory) ? values.collectionHistory : {},
     workdaysOverride: values.workdaysOverride == null ? null : Math.max(1, Math.min(31, Math.round(amount(values.workdaysOverride)))),
     workdaysOverrideMonth: /^\d{4}-\d{1,2}$/.test(String(values.workdaysOverrideMonth || '')) ? String(values.workdaysOverrideMonth) : ''
   };
@@ -57,7 +58,11 @@ function normalise(values) {
 
 const savedData = readData();
 let data = normalise({ ...defaults, ...savedData, payoutTarget: savedData.payoutTarget ?? savedData.payoutTargetMax ?? defaults.payoutTarget });
+let storageVersion = null;
+try { storageVersion = localStorage.getItem(KEY); } catch { /* Saving reports unavailable storage. */ }
 let stagedToday = null;
+let todayEditorDay = null;
+let settingsDay = null;
 let stagedWorkdaysOverride = null;
 let visibleTierCount = 5;
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
@@ -76,13 +81,63 @@ const dateKey = (date) => `${date.getFullYear()}-${date.getMonth()}-${date.getDa
 const monthKey = (date) => `${date.getFullYear()}-${date.getMonth()}`;
 
 function save() {
-  localStorage.setItem(KEY, JSON.stringify(data));
+  recordCollections();
+  data.webInitialised = true;
+  try {
+    if (localStorage.getItem(KEY) !== storageVersion) {
+      if ($('storageStatus')) $('storageStatus').textContent = 'Changed in another tab · reload before saving';
+      return false;
+    }
+    const nextVersion = JSON.stringify(data);
+    localStorage.setItem(KEY, nextVersion);
+    storageVersion = nextVersion;
+    if ($('storageStatus')) $('storageStatus').textContent = 'Saved on this device';
+    return true;
+  } catch {
+    if ($('storageStatus')) $('storageStatus').textContent = 'Could not save · download a backup in History';
+    return false;
+  }
 }
 
-if (data.importedOriginalApp) save();
+function historyTotal(record) {
+  return Math.round((Object.values(record.days).reduce((sum, value) => sum + amount(value), 0) + record.adjustment) * 100) / 100;
+}
 
-function ensureCurrentDate() {
-  const now = new Date();
+function recordCollections() {
+  if (!/^\d{4}-\d{1,2}$/.test(data.month) || typeof data.day !== 'string' || !data.day.startsWith(data.month + '-')) return;
+  const [year, month] = data.month.split('-').map(Number);
+  const record = data.collectionHistory[data.month] || { days: {}, adjustment: 0 };
+  record.days[data.day] = data.today;
+  const previousDays = Object.entries(record.days).reduce((sum, [day, value]) => sum + (day === data.day ? 0 : amount(value)), 0);
+  // Legacy balances and manual corrections stay separate from known daily entries.
+  record.adjustment = Math.round((data.before - previousDays) * 100) / 100;
+  record.total = historyTotal(record);
+  record.goal = data.goal;
+  record.hours = data.hours;
+  record.workdays = data.workdaysOverride ?? automaticWorkdays(new Date(year, month, 1));
+  record.giftCard = data.giftCard;
+  record.currency = payoutCurrency();
+  record.currencyRate = payoutRate();
+  record.estimatedPayoutUsd = payoutAtCollection(record.hours, record.workdays, record.total, 1, record.giftCard).payout;
+  data.collectionHistory[data.month] = record;
+}
+
+function setRecordedDay(day, total) {
+  const month = day.split('-').slice(0, 2).join('-');
+  if (day === data.day) data.today = amount(total);
+  else {
+    const record = data.collectionHistory[month] || { days: {}, adjustment: 0 };
+    const difference = amount(total) - amount(record.days[day]);
+    record.days[day] = amount(total);
+    record.total = historyTotal(record);
+    if (record.workdays) record.estimatedPayoutUsd = payoutAtCollection(record.hours, record.workdays, record.total, 1, record.giftCard).payout;
+    data.collectionHistory[month] = record;
+    if (month === data.month) data.before = Math.max(0, data.before + difference);
+  }
+}
+
+function ensureCurrentDate(now = new Date()) {
+  recordCollections();
   const currentMonth = monthKey(now);
   const currentDay = dateKey(now);
   if (!data.month) {
@@ -296,7 +351,7 @@ function snapshot() {
   const workday = isWorkday(now);
   const { workdays: workdaysInMonth, remainingDays } = workdayCounts(now, now, data.workdaysOverride);
   const elapsedWorkdays = Math.min(workdaysInMonth, Math.max(0, workdaysInMonth - remainingDays + (workday ? 1 : 0)));
-  const today = stagedToday ?? data.today;
+  const today = stagedToday !== null && todayEditorDay === data.day ? stagedToday : data.today;
   const collected = data.before + today;
   let tier = ['Base', 0, .0535];
   let next = 0;
@@ -359,6 +414,7 @@ function render() {
   setProgress('tierProgressFill', view.next ? view.collected / (view.collected + view.next) * 100 : 100);
   $('tierCopy').textContent = view.next ? `${money(view.next)} to the next level` : data.hours <= 6 ? 'Level 3 cap · 6h/day or less' : 'Highest level reached';
   renderPayoutTiers(view);
+  renderHistory();
 }
 
 function renderPayoutTiers(view) {
@@ -484,6 +540,8 @@ function refreshCurrencyFields(form, resetRate = false) {
   $('customCurrencyFields').hidden = form.currency.value !== 'CUSTOM';
 }
 function openSettings() {
+  ensureCurrentDate();
+  settingsDay = data.day;
   const form = $('settingsForm');
   stagedWorkdaysOverride = data.workdaysOverride;
   form.currency.value = data.currency;
@@ -506,6 +564,7 @@ function openSettings() {
   refreshCurrencyFields(form);
   resetPlannerPeriod(form);
   updateHoursPlanner(form);
+  renderHistory();
   settingsStatus('');
   $('settingsModal').hidden = false;
   selectSettingsTab($('collectionsTab'));
@@ -538,11 +597,12 @@ function closeTodayEditor(commit) {
   const editor = $('todayEditor');
   if (editor.style.display !== 'block') return;
   if (commit) {
-    data.today = stagedToday ?? parseExpression(editor.value);
-    data.day = dateKey(new Date());
-    save();
+    ensureCurrentDate();
+    setRecordedDay(todayEditorDay, stagedToday ?? parseExpression(editor.value));
+    if (!save()) return;
   }
   stagedToday = null;
+  todayEditorDay = null;
   editor.style.display = 'none';
   $('todayButton').style.display = 'flex';
   render();
@@ -557,7 +617,7 @@ $('planHoursButton').addEventListener('click', () => {
 $('closeModal').addEventListener('click', () => saveSettings($('settingsForm')));
 $('cancelModal').addEventListener('click', closeSettings);
 const markSettingsChanged = (event) => {
-  if (!['plannerMonth', 'plannerYear'].includes(event.target.name)) settingsStatus();
+  if (!['plannerMonth', 'plannerYear', 'historyMonth'].includes(event.target.name)) settingsStatus();
 };
 $('settingsForm').addEventListener('input', markSettingsChanged);
 $('settingsForm').addEventListener('change', markSettingsChanged);
@@ -663,6 +723,11 @@ function saveSettings(form) {
     invalid.reportValidity();
     return;
   }
+  if (settingsDay !== dateKey(new Date())) {
+    openSettings();
+    settingsStatus('New day: collections refreshed. Please check and save.');
+    return;
+  }
   const currencyRate = selectedRate(form);
   data.currency = form.currency.value;
   data.customCurrency = /^[A-Za-z]{3}$/.test(form.customCurrency.value) ? form.customCurrency.value.toUpperCase() : defaults.customCurrency;
@@ -687,7 +752,7 @@ function saveSettings(form) {
   data.workdaysOverrideMonth = stagedWorkdaysOverride === null ? '' : monthKey(new Date());
   data.month = monthKey(new Date());
   data.day = dateKey(new Date());
-  save();
+  if (!save()) { settingsStatus('Could not save. Download a backup in History.'); return; }
   closeSettings();
   stagedWorkdaysOverride = null;
   render();
@@ -698,8 +763,10 @@ $('settingsForm').addEventListener('submit', (event) => {
   saveSettings(event.currentTarget);
 });
 $('todayButton').addEventListener('click', () => {
+  ensureCurrentDate();
   const editor = $('todayEditor');
   stagedToday = data.today;
+  todayEditorDay = data.day;
   $('todayButton').style.display = 'none';
   editor.style.display = 'block';
   editor.value = `${data.today}+`;
@@ -720,4 +787,52 @@ $('tierListToggle').addEventListener('click', () => {
   render();
 });
 
+function renderHistory() {
+  const select = $('settingsForm').historyMonth;
+  const selected = select.value || data.month;
+  const months = Object.keys(data.collectionHistory).sort((a, b) => {
+    const [ay, am] = a.split('-').map(Number), [by, bm] = b.split('-').map(Number);
+    return by * 12 + bm - (ay * 12 + am);
+  });
+  select.replaceChildren(...months.map((month) => {
+    const [year, index] = month.split('-').map(Number);
+    return Object.assign(document.createElement('option'), { value: month, textContent: new Date(year, index, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) });
+  }));
+  select.value = months.includes(selected) ? selected : months[0] || '';
+  const record = data.collectionHistory[select.value];
+  $('historyTotal').textContent = money(record?.total || 0);
+  const rows = [];
+  if (record?.adjustment) {
+    const row = document.createElement('tr');
+    const label = document.createElement('td'), value = document.createElement('td');
+    label.textContent = 'Earlier balance / adjustment';
+    value.textContent = `${record.adjustment < 0 ? '−' : ''}${money(Math.abs(record.adjustment))}`;
+    row.append(label, value); rows.push(row);
+  }
+  Object.keys(record?.days || {}).sort((a, b) => Number(b.split('-')[2]) - Number(a.split('-')[2])).forEach((day) => {
+    const [year, month, date] = day.split('-').map(Number);
+    const row = document.createElement('tr');
+    const label = document.createElement('td'), value = document.createElement('td');
+    label.textContent = new Date(year, month, date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    value.textContent = money(record.days[day]);
+    row.append(label, value); rows.push(row);
+  });
+  $('historyDays').replaceChildren(...rows);
+}
+$('settingsForm').historyMonth.addEventListener('change', renderHistory);
+$('downloadBackup').addEventListener('click', () => {
+  recordCollections();
+  const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), data }, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `collection-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
 render();
+save();
+setInterval(() => {
+  if ($('settingsModal').hidden && $('todayEditor').style.display !== 'block') render();
+}, 60000);
