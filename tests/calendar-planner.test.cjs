@@ -319,15 +319,16 @@ test('all lower-paying options are marked lower and a shared bonus does not chan
   });
 });
 
-test('comparison grid includes the exact requested collection without mutating records', () => {
+test('the tested collection is separate from the tier-organized table and does not mutate records', () => {
   const { context, node } = loadApp();
   const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
     comparisonAmount: { value: '27664' }, currency: { value: 'MXN' }, currencyRate: { value: '18' }, giftCard: { value: '0' } };
   const before = savedState(context);
   context.renderHoursComparison(form);
   const html = node('plannerComparison').innerHTML;
-  assert.ok(html.includes('$27,664.00'));
-  assert.equal((html.match(/class="comparison-selected"/g) || []).length, 1);
+  assert.ok(node('comparisonSelected').innerHTML.includes('$27,664.00'));
+  assert.equal((html.match(/class="comparison-selected"/g) || []).length, 0);
+  assert.equal((node('comparisonSelected').innerHTML.match(/<td /g) || []).length, 3);
   assert.equal((html.match(/<td /g) || []).length, (html.match(/<tr/g) || []).length * 3);
   assert.deepEqual(savedState(context), before);
 });
@@ -335,7 +336,7 @@ test('comparison grid includes the exact requested collection without mutating r
 test('comparison reaches every exact 8-hour tier threshold through Level 10', () => {
   const { context } = loadApp();
   for (const workdays of [19, 21, 31]) {
-    const amounts = context.comparisonCollections(workdays, 27664);
+    const amounts = context.comparisonCollections(workdays);
     const expectedThreshold = 358 * 8 * workdays;
     assert.equal(amounts[amounts.length - 1], expectedThreshold);
     assert.equal(context.payoutAtCollection(8, workdays, expectedThreshold, 18).tier, 'Level 10');
@@ -345,10 +346,56 @@ test('comparison reaches every exact 8-hour tier threshold through Level 10', ()
   }
 });
 
-test('an entered amount above Level 10 is kept without creating an unbounded table', () => {
+test('comparison rows contain only sorted actual tier thresholds for all three schedules', () => {
   const { context } = loadApp();
-  const amounts = context.comparisonCollections(19, 1000000);
+  const amounts = context.comparisonCollections(19);
   assert.ok(amounts.includes(54416));
-  assert.equal(amounts[amounts.length - 1], 1000000);
+  assert.equal(amounts[amounts.length - 1], 54416);
+  assert.ok(!amounts.includes(0));
+  assert.ok(!amounts.includes(5000));
+  assert.ok(!amounts.includes(10000));
+  const hourlyThresholds = [133, 158, 183, 208, 233, 258, 283, 308, 333, 358];
+  for (const hours of [6, 7, 8]) {
+    const count = hours === 6 ? 3 : 10;
+    hourlyThresholds.slice(0, count).forEach((minimum, i) => {
+      const threshold = minimum * hours * 19;
+      assert.ok(amounts.includes(threshold));
+      assert.ok(context.comparisonThresholdLabel(threshold, 19).includes(`${hours}h → Level ${i + 1}`));
+    });
+  }
+  for (let i = 0; i < amounts.length; i++) {
+    assert.ok(context.comparisonThresholdLabel(amounts[i], 19).length > 0);
+    if (i) assert.ok(amounts[i] > amounts[i - 1]);
+  }
   assert.ok(amounts.length < 40);
+});
+
+test('MXN payout rate replaces the legacy rate and is shared with Planner and comparison', () => {
+  const { context } = loadApp({ webInitialised: true, currency: 'MXN', currencyRate: 18.65, rate: 16.9243 });
+  assert.equal(savedState(context).rate, 18.65);
+  const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
+    comparisonAmount: { value: '27000' }, currency: { value: 'MXN' }, currencyRate: { value: '18.65' }, giftCard: { value: '0' } };
+  assert.equal(context.plannerMxnRate(form), 18.65);
+  const app = context.normalise({ currency: 'CUSTOM', customCurrency: 'MXN', currencyRate: 18.65, rate: 16.9243 });
+  assert.equal(app.rate, 18.65);
+  form.currency.value = 'CUSTOM'; form.customCurrency = { value: 'mxn' };
+  assert.equal(context.plannerMxnRate(form), 18.65);
+  form.currencyRate.value = '18.75';
+  assert.equal(context.plannerMxnRate(form), 18.75);
+  form.currency.value = 'USD'; form.currencyRate.value = '1';
+  assert.equal(context.plannerMxnRate(form), 18.65);
+});
+
+test('comparison displays and calculates using the Payout form rate immediately', () => {
+  const { context, node } = loadApp({ webInitialised: true, rate: 16.9243 });
+  const form = { plannerYear: { value: '2099' }, plannerMonth: { value: '11' },
+    comparisonAmount: { value: '27000' }, currency: { value: 'MXN' }, currencyRate: { value: '18.65' }, giftCard: { value: '0' } };
+  context.renderHoursComparison(form);
+  assert.ok(node('comparisonPeriod').textContent.includes('1 USD = 18.65 MXN'));
+  const period = context.plannerPeriod(form);
+  const expected = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(context.payoutAtCollection(6, period.workdays, 27000, 18.65).payout);
+  assert.ok(node('comparisonSelected').innerHTML.includes(expected));
+  form.currencyRate.value = '19';
+  context.renderHoursComparison(form);
+  assert.ok(node('comparisonPeriod').textContent.includes('1 USD = 19 MXN'));
 });

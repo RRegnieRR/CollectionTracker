@@ -7,7 +7,7 @@
   <title>Collection Tracker</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=cash-dollar" />
   <link rel="stylesheet" href="styles.css?v=simple-dashboard" />
-  <link rel="stylesheet" href="settings.css?v=comparison-level-ten" />
+  <link rel="stylesheet" href="settings.css?v=tier-organized-comparison" />
 </head>
 <body>
   <main class="shell">
@@ -96,7 +96,8 @@
       <div class="comparison-toolbar"><button id="backToPlannerButton" class="secondary-button" type="button">← Planner</button><button id="jumpToLevelTenButton" class="text-button" type="button">Level 10 ↓</button><label>Collected · USD<input name="comparisonAmount" type="number" min="0" step="any" inputmode="decimal" disabled /></label></div>
       <p id="comparisonPeriod" class="settings-hint"></p>
       <div class="comparison-legend"><span class="comparison-best">↑ Highest payout</span><span class="comparison-lower">↓ Lower payout</span><span>All equal = neutral</span></div>
-      <table class="planner-comparison comparison-grid"><caption id="comparisonCoverage">Same collections per row · payouts in MXN</caption><thead><tr><th scope="col">Collected · USD</th><th scope="col">6 h/day<small>Level 3 cap</small></th><th scope="col">7 h/day</th><th scope="col">8 h/day</th></tr></thead><tbody id="plannerComparison"></tbody></table>
+      <table class="planner-comparison comparison-grid"><caption>Your collection · payouts in MXN</caption><thead><tr><th scope="col">Collected · USD</th><th scope="col">6 h/day<small>Level 3 cap</small></th><th scope="col">7 h/day</th><th scope="col">8 h/day</th></tr></thead><tbody id="comparisonSelected"></tbody></table>
+      <table class="planner-comparison comparison-grid"><caption id="comparisonCoverage">Tier thresholds · payouts in MXN</caption><thead><tr><th scope="col">Unlocks at · USD</th><th scope="col">6 h/day<small>Level 3 cap</small></th><th scope="col">7 h/day</th><th scope="col">8 h/day</th></tr></thead><tbody id="plannerComparison"></tbody></table>
       </section>
       <section id="payoutSettings" class="settings-tab-panel" role="tabpanel" aria-labelledby="payoutTab" hidden>
       <div class="settings-pair">
@@ -116,6 +117,6 @@
       <div class="modal-actions"><span id="settingsStatus" role="status" aria-live="polite"></span><button class="secondary-button" id="cancelModal" type="button">Cancel</button><button class="primary-button" type="submit">Save</button></div>
     </form>
   </div>
-  <script src="app.js?v=comparison-level-ten"></script>
+  <script src="app.js?v=tier-organized-comparison"></script>
 </body>
 </html>

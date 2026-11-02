@@ -33,6 +33,9 @@ function readData() {
 
 function normalise(values) {
   const currency = ['USD', 'MXN', 'CUSTOM'].includes(String(values.currency || 'USD').toUpperCase()) ? String(values.currency || 'USD').toUpperCase() : 'USD';
+  const code = currency === 'CUSTOM' ? String(values.customCurrency || '').toUpperCase() : currency;
+  const savedMxnRate = amount(values.rate) || defaults.rate;
+  const mxnRate = code === 'MXN' ? amount(values.currencyRate) || savedMxnRate : savedMxnRate;
   const savedGoalTier = Number(values.goalTier);
   const hasValidGoalTier = values.goalMode === 'tier' && values.goalTier !== null && values.goalTier !== '' && Number.isInteger(savedGoalTier) && savedGoalTier >= 0 && savedGoalTier < tiers.length;
   return {
@@ -44,7 +47,7 @@ function normalise(values) {
     before: amount(values.before),
     today: amount(values.today),
     hours: Math.min(8, Math.max(0.1, amount(values.hours, defaults.hours))),
-    rate: Math.max(0.01, amount(values.rate, defaults.rate)),
+    rate: mxnRate,
     currency,
     customCurrency: /^[A-Za-z]{3}$/.test(String(values.customCurrency || '')) ? String(values.customCurrency).toUpperCase() : defaults.customCurrency,
     currencyRate: Math.max(0.0001, amount(values.currencyRate, currency === 'MXN' ? amount(values.rate, defaults.rate) : 1)),
@@ -64,11 +67,16 @@ let stagedToday = null;
 let todayEditorDay = null;
 let settingsDay = null;
 let comparingHours = false;
+let stagedMxnRate = data.rate;
 let stagedWorkdaysOverride = null;
 let visibleTierCount = 5;
 const money = (value) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount(value));
 function payoutCurrency() { return data.currency === 'CUSTOM' ? data.customCurrency : data.currency; }
 function payoutRate() { return payoutCurrency() === 'USD' ? 1 : data.currencyRate; }
+function formPayoutCurrency(form) { return form.currency.value === 'CUSTOM' ? String(form.customCurrency?.value || '').toUpperCase() : form.currency.value; }
+function plannerMxnRate(form) {
+  return formPayoutCurrency(form) === 'MXN' ? amount(form.currencyRate.value) || stagedMxnRate : stagedMxnRate;
+}
 function payoutMoney(value) {
   const code = payoutCurrency();
   try {
@@ -238,32 +246,45 @@ function compareHoursAtCollection(collection, workdays, mxnRate, giftCard = 0) {
   }));
 }
 
-function comparisonCollections(workdays, reference) {
-  const levelTen = tierGoal(tiers.length - 1, 8, workdays);
-  const amounts = new Set(Array.from({ length: Math.floor(levelTen / 5000) + 1 }, (_, i) => i * 5000));
-  // Include every 8-hour tier's exact threshold so no level is skipped.
-  tiers.forEach((tier, index) => amounts.add(tierGoal(index, 8, workdays)));
-  amounts.add(reference);
+function comparisonCollections(workdays) {
+  const amounts = new Set();
+  for (const hours of [6, 7, 8]) {
+    const count = hours === 6 ? maxTierForSixOrFewerHours : tiers.length;
+    tiers.slice(0, count).forEach((tier, index) => amounts.add(tierGoal(index, hours, workdays)));
+  }
   return [...amounts].sort((a, b) => a - b);
+}
+
+function comparisonThresholdLabel(collection, workdays) {
+  const labels = [];
+  for (const hours of [6, 7, 8]) {
+    const count = hours === 6 ? maxTierForSixOrFewerHours : tiers.length;
+    tiers.slice(0, count).forEach((tier, index) => {
+      if (Math.abs(tierGoal(index, hours, workdays) - collection) < 1e-7) labels.push(`${hours}h → ${tier[0]}`);
+    });
+  }
+  return labels.join(' · ');
 }
 
 function renderHoursComparison(form) {
   const period = plannerPeriod(form);
   if (!period) return;
   const reference = amount(form.comparisonAmount.value);
-  const rate = Math.max(.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
+  const rate = plannerMxnRate(form);
   const giftCard = amount(form.giftCard.value);
   const levelTen = tierGoal(tiers.length - 1, 8, period.workdays);
-  const amounts = comparisonCollections(period.workdays, reference);
+  const amounts = comparisonCollections(period.workdays);
   const mxn = (value) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(value);
-  $('comparisonPeriod').textContent = `${period.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · ${period.workdays} workdays · 1 USD = ${rate.toFixed(4)} MXN`;
+  $('comparisonPeriod').textContent = `${period.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })} · ${period.workdays} workdays · Payout rate: 1 USD = ${new Intl.NumberFormat('en-US', { maximumFractionDigits: 4 }).format(rate)} MXN`;
   $('comparisonCoverage').textContent = `Payouts in MXN · 8h Level 10 at ${money(levelTen)} USD collected`;
+  const cellContent = (result) => {
+    const description = result.standing === 'best' ? 'Highest payout' : result.standing === 'lower' ? 'Lower payout' : 'Equal payout';
+    return `<td class="comparison-${result.standing}" aria-label="${result.hours} hours: ${mxn(result.payout)} MXN, ${result.tier}. ${description}."><strong>${result.standing === 'best' ? '↑ ' : result.standing === 'lower' ? '↓ ' : ''}${mxn(result.payout)}</strong><small>${result.tier}${result.hours === 6 && result.tier === 'Level 3' ? ' · capped' : ''}</small></td>`;
+  };
+  $('comparisonSelected').innerHTML = `<tr class="comparison-selected"><th scope="row">${money(reference)}<small>Your amount</small></th>${compareHoursAtCollection(reference, period.workdays, rate, giftCard).map(cellContent).join('')}</tr>`;
   $('plannerComparison').innerHTML = amounts.map((collection) => {
     const results = compareHoursAtCollection(collection, period.workdays, rate, giftCard);
-    return `<tr${collection === reference ? ' class="comparison-selected"' : ''}${collection === levelTen ? ' data-level-ten="true"' : ''}><th scope="row">${money(collection)}${collection === reference ? '<small>Selected</small>' : ''}${collection === levelTen ? '<small>8h · Level 10</small>' : ''}</th>${results.map((result) => {
-      const description = result.standing === 'best' ? 'Highest payout' : result.standing === 'lower' ? 'Lower payout' : 'Equal payout';
-      return `<td class="comparison-${result.standing}" aria-label="${result.hours} hours: ${mxn(result.payout)} MXN, ${result.tier}. ${description}."><strong>${result.standing === 'best' ? '↑ ' : result.standing === 'lower' ? '↓ ' : ''}${mxn(result.payout)}</strong><small>${result.tier}${result.hours === 6 && result.tier === 'Level 3' ? ' · capped' : ''}</small></td>`;
-    }).join('')}</tr>`;
+    return `<tr${collection === levelTen ? ' data-level-ten="true"' : ''}><th scope="row">${money(collection)}<small>${comparisonThresholdLabel(collection, period.workdays)}</small></th>${results.map(cellContent).join('')}</tr>`;
   }).join('');
 }
 
@@ -360,7 +381,7 @@ function updateHoursPlanner(form) {
     $('plannerGrowth').textContent = 'Enter your payout target.';
     return;
   }
-  const mxnRate = Math.max(0.0001, form.currency.value === 'MXN' ? amount(form.currencyRate.value, data.rate) : amount(data.rate, defaults.rate));
+  const mxnRate = plannerMxnRate(form);
   const giftCard = amount(form.giftCard.value);
   const collected = period.current ? amount(form.before.value) + amount(form.today.value) : 0;
   list.replaceChildren(...[target].map((target) => {
@@ -570,7 +591,7 @@ function selectedRate(form) {
 }
 function refreshCurrencyFields(form, resetRate = false) {
   if (form.currency.value === 'USD') form.currencyRate.value = '1';
-  if (form.currency.value === 'MXN' && resetRate) form.currencyRate.value = amount(data.rate).toFixed(4);
+  if (form.currency.value === 'MXN' && resetRate) form.currencyRate.value = String(stagedMxnRate);
   $('exchangeRateField').hidden = form.currency.value === 'USD';
   form.currencyRate.required = form.currency.value !== 'USD';
   form.customCurrency.required = form.currency.value === 'CUSTOM';
@@ -582,6 +603,7 @@ function openSettings() {
   settingsDay = data.day;
   showHoursComparison(false);
   const form = $('settingsForm');
+  stagedMxnRate = data.rate;
   stagedWorkdaysOverride = data.workdaysOverride;
   form.currency.value = data.currency;
   form.customCurrency.value = data.customCurrency;
@@ -686,6 +708,7 @@ $('settingsForm').addEventListener('input', markSettingsChanged);
 $('settingsForm').addEventListener('change', markSettingsChanged);
 $('settingsForm').customCurrency.addEventListener('input', (event) => {
   $('exchangeRateCurrency').textContent = event.currentTarget.value.toUpperCase() || 'EUR';
+  updateHoursPlanner(event.currentTarget.form);
 });
 $('settingsForm').addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
@@ -738,7 +761,11 @@ $('plannerThisMonth').addEventListener('click', () => {
   updateHoursPlanner(form);
 });
 ['payoutTarget', 'giftCard', 'currencyRate', 'before', 'today'].forEach((field) => {
-  $('settingsForm')[field].addEventListener('input', (event) => updateHoursPlanner(event.currentTarget.form));
+  $('settingsForm')[field].addEventListener('input', (event) => {
+    const form = event.currentTarget.form;
+    if (field === 'currencyRate' && formPayoutCurrency(form) === 'MXN' && amount(form.currencyRate.value) > 0) stagedMxnRate = amount(form.currencyRate.value);
+    updateHoursPlanner(form);
+  });
 });
 $('editWorkdaysButton').addEventListener('click', () => {
   const form = $('settingsForm');
@@ -796,6 +823,7 @@ function saveSettings(form) {
   data.currency = form.currency.value;
   data.customCurrency = /^[A-Za-z]{3}$/.test(form.customCurrency.value) ? form.customCurrency.value.toUpperCase() : defaults.customCurrency;
   data.currencyRate = currencyRate;
+  data.rate = formPayoutCurrency(form) === 'MXN' ? currencyRate : stagedMxnRate;
   const selectedGoalTier = Number(form.goalMode.value.replace('tier-', ''));
   const goalUsesTier = Number.isInteger(selectedGoalTier) && selectedGoalTier >= 0 && selectedGoalTier < tiers.length;
   const submittedWorkdays = !$('workdaysFields').hidden
